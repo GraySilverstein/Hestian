@@ -1,8 +1,9 @@
 # Data governance
 
-Status: policy design. No persistent store exists yet; no tenant data has been
-collected. This document defines how data will be classified, owned, traced and
-retained before any of it is stored.
+Status: first tenant data is now stored (identity, businesses, memberships,
+invitations, audit). Financial records, documents and AI data do not exist. This
+document separates what is stored today from what is planned, and states the
+retention decisions that remain open.
 
 ---
 
@@ -12,11 +13,28 @@ retained before any of it is stored.
 | --- | --- | --- |
 | **Public** | product marketing copy, documentation | no restriction |
 | **Internal** | module structure, non-tenant operational metrics | staff only |
-| **Confidential** | tenant financial records, invoices, counterparties, project costs, campaign performance | tenant-scoped access, no cross-tenant aggregation without explicit contract |
-| **Restricted** | provider credentials, session tokens, encryption keys, bank account numbers, tax identifiers | encrypted, never logged, never returned to the browser, access audited |
+| **Confidential** | tenant financial records, invoices, counterparties, project costs, campaign performance, business names, membership lists | tenant-scoped access, no cross-tenant aggregation without explicit contract |
+| **Restricted** | provider credentials, session tokens, password hashes, invitation tokens, encryption keys, bank account numbers, tax identifiers | encrypted or hashed, never logged, never returned to the browser, access audited |
 
 Financial records are Confidential by default. Anything that authenticates or
 moves money is Restricted.
+
+### Data stored today
+
+| Data | Class | Location | Notes |
+| --- | --- | --- | --- |
+| Name, email address | Confidential | `identity_user` | Collected at registration; no verification yet |
+| Password hash (scrypt) | Restricted | `identity_account.password` | Never logged or returned; plaintext never stored |
+| Session token hash, expiry, IP, user agent | Restricted | `identity_session` | IP/user agent are collected by the provider for security; not surfaced in the UI |
+| Verification / reset tokens | Restricted | `identity_verification` | Single-use, expiring; delivery unconfigured |
+| Business name, functional currency | Confidential | `tenancy_business` | Created by an authenticated owner |
+| Membership role and status | Confidential | `tenancy_membership` | Drives authorization |
+| Invitation email, role, token hash | Confidential / Restricted | `tenancy_invitation` | Token stored only as SHA-256; expires in 7 days |
+| Audit events | Internal, may contain Confidential references | `audit_event` | Metadata redacted; no emails, tokens or passwords |
+| Rate-limit counters | Internal | `identity_rate_limit`, `platform_rate_limit` | Keyed by hashed subject; no content |
+
+Not stored: financial transactions, documents, payment details, tax identifiers,
+uploaded files, AI prompts or outputs.
 
 ## 2. Ownership
 
@@ -26,7 +44,8 @@ moves money is Restricted.
   depending on the contract, which must be stated explicitly before launch.
 - Derived analytical outputs (Layer C) are owned by the module that computed
   them, carry their inputs, and are disposable.
-- Audit events are owned by `audit` and are not editable by any module.
+- Audit events are owned by `audit` and are not editable by any module; database
+  triggers reject `UPDATE` and `DELETE`.
 
 ## 3. Provenance
 
@@ -45,6 +64,9 @@ Every important financial fact must be traceable to its source:
 A record whose provenance cannot be resolved is a defect. Provenance references
 are immutable; a correction creates new records rather than rewriting the chain.
 
+Today the only provenance is the audit chain: each event hashes the previous event,
+so the order and integrity of security-relevant actions can be verified.
+
 ## 4. Data quality and ambiguity
 
 - Conflicting evidence produces an `unresolved` review item with both sources
@@ -57,6 +79,16 @@ are immutable; a correction creates new records rather than rewriting the chain.
   matching, for anything that affects money.
 
 ## 5. Retention
+
+Implemented today:
+
+| Data | Retention | Notes |
+| --- | --- | --- |
+| Sessions | 8 hours absolute; refresh extends activity within that window | Rows expire and are rejected on read; no cleanup job yet |
+| Invitations | 7 days, single use | Expired invitations remain rows until a cleanup policy exists |
+| Rate-limit counters | Window length (max 5 minutes) | Overwritten in place by key |
+| Audit events | Indefinite | Append-only; retention period undecided |
+| Identity and tenancy records | Until deletion is implemented | No self-service account deletion exists |
 
 Planned policy (periods to be confirmed with legal review before production):
 
@@ -84,14 +116,20 @@ contract. No retention claim should be made in product copy until decided.
   be offered as a tenant-facing "delete my data" control.
 - Legal hold suspends deletion for the affected tenant; the hold itself is
   audited.
+- Account deletion is **not implemented**. The authentication provider exposes a
+  deletion hook, but Hestian has no user-facing flow, no confirmation step, no
+  grace period and no export. This must be designed before launch.
+- Email addresses cannot currently be changed or removed by the user; a change
+  would require re-verification, which depends on an email provider.
 
 ## 7. Residency and subprocessors
 
-- Data is stored in the platform's D1/R2 regions. The exact region set and any
+- Data is stored in the platform's D1 region. The exact region set and any
   data-residency guarantees are unresolved and must be confirmed before
   representing residency to customers.
 - Subprocessors (hosting, model providers, email) require a recorded list with
-  purpose and data categories. None are engaged in this milestone.
+  purpose and data categories. None are engaged in this milestone; Resend is the
+  intended email provider but is not configured.
 - Cross-border transfer mechanisms are a legal decision, not an engineering one.
 
 ## 8. AI and model data
@@ -113,6 +151,8 @@ Rules for when intelligence work begins:
 7. Recommendations are proposals; acting on them requires a human-authorized
    operation in the owning module.
 
+No AI feature, prompt or embedding exists in this milestone.
+
 ## 9. Fixtures and test data
 
 - Any development fixture must be labelled as a fixture in its name and in the
@@ -121,17 +161,19 @@ Rules for when intelligence work begins:
 - Fixtures never enter a production database. Seeding is a local/test-only path.
 - Real tenant data is never copied into a test, a screenshot, a prompt or a
   repository file.
-- Milestone 0 ships no financial fixtures at all.
+- Tests create synthetic users such as `a@example.com` in isolated databases.
 
 ## 10. Storage, backup and migrations
 
-- D1 is the authoritative store; R2 holds documents. Neither is a cache.
-- Migrations are forward-only, reviewed, and applied through a controlled server
-  path — never by hand-editing production data. Each migration states whether it
-  is reversible and what happens to existing rows.
+- D1 is the authoritative store. R2 is not used yet.
+- Migrations are forward-only, reviewed, and applied through Wrangler
+  (`db:migrate:local`, `db:migrate:remote`) — never by hand-editing production
+  data. Each migration states what happens to existing rows.
+- Local state lives in `.wrangler/state` and is disposable; it is not a backup.
 - D1 backup/restore capabilities and point-in-time recovery must be verified and
-  documented before real data exists. Do not promise a recovery objective until a
-  restore has been rehearsed.
+  documented before real tenant data exists. Do not promise a recovery objective
+  until a restore has been rehearsed. No remote database exists yet, so this is
+  unverified.
 - Restoring a backup is itself a consequential action and must be audited.
 
 ## 11. Access and least privilege
@@ -141,7 +183,8 @@ Rules for when intelligence work begins:
 - Support access to a tenant's data requires the tenant's authorization and a
   time-bounded grant.
 - Exports are generated server-side, access-controlled, expiring and audited.
-- No public R2 objects. Document access uses signed, short-lived URLs.
+- No public R2 objects. Document access will use signed, short-lived URLs.
+- No production environment exists yet, so no production access grant exists.
 
 ## 12. Open questions
 
@@ -152,3 +195,5 @@ Rules for when intelligence work begins:
 5. Legal basis and consent model for any model-provider data sharing.
 6. Audit log retention and tenant-facing audit access.
 7. Encryption key management and rotation ownership.
+8. Account deletion, export and grace-period design.
+9. Cleanup jobs for expired sessions, invitations and rate-limit rows.

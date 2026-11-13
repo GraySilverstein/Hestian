@@ -20,11 +20,15 @@ This workflow is mandatory. The repository is the canonical source of truth and
 ```bash
 npm ci
 cp .env.example .env.local
-npm run dev
+cp .dev.vars.example .dev.vars  # set BETTER_AUTH_SECRET to 32+ random chars
+npm run db:migrate:local
+npm run start:worker            # http://127.0.0.1:8787
 ```
 
-No secrets are required in Milestone 0. Never commit `.env`, `.env.local` or any
-file containing credentials.
+`.dev.vars` is git-ignored and read by Wrangler as local Worker bindings; Next.js
+`dev` reads the same variables through `getCloudflareContext`. Never commit
+`.dev.vars`, `.env`, `.env.local` or any file containing credentials. Example
+files list names only.
 
 ## 2. Commands
 
@@ -37,10 +41,18 @@ file containing credentials.
 | `npm run test` | Vitest (single run) |
 | `npm run check:boundaries` | Architecture gate only |
 | `npm run check` | typecheck + lint + test |
+| `npm run build:worker` | OpenNext build → `.open-next/worker.js` |
+| `npm run start:worker` | `wrangler dev` on 127.0.0.1:8787 |
+| `npm run verify:runtime` | 17 live HTTP checks against that Worker |
+| `npm run db:migrate:local` | Apply migrations to local D1 |
+| `npm run db:migrate:remote` | Apply migrations to deployed D1 (requires auth) |
+| `npm run auth:schema` | Regenerate identity schema SQL from Better Auth |
 
 `npm run check` plus `npm run build` is the minimum before a commit that changes
-code. A documentation-only commit requires that the diff is reviewed; it does not
-require a rebuild unless it changes executable examples.
+code. Changes to authentication, middleware, headers, routing, bindings or
+migrations additionally require `npm run build:worker`, a `start:worker` session
+and `npm run verify:runtime`. A documentation-only commit requires that the diff
+is reviewed; it does not require a rebuild unless it changes executable examples.
 
 ## 3. The mandatory loop
 
@@ -111,7 +123,7 @@ A change is ready when:
       architecture documentation, and add or amend an ADR.
 - [ ] Financial changes state which invariants (`FI-xx`) they preserve or modify.
 - [ ] Security-relevant changes complete the checklist in
-      [SECURITY.md](SECURITY.md#13-review-checklist-for-security-relevant-changes).
+      [SECURITY.md](SECURITY.md#10-review-checklist).
 - [ ] No fixture or sample financial data is presented as real.
 - [ ] Documentation status (implemented / planned) matches reality.
 
@@ -140,33 +152,53 @@ accepted; supersede with a new record instead of rewriting history.
 3. `npm run lint`
 4. `npm run test`
 5. `npm run build`
+6. `npm run build:worker`
 
-CI does not verify the Worker runtime, D1 behaviour or authentication; those are
-manual steps once the deployment path exists.
+CI does not run workerd, so it cannot prove headers, cookies, D1 bindings or
+authentication behaviour end to end; `npm run verify:runtime` is the manual gate
+for those.
 
-## 10. Deployment (planned)
+## 10. Migrations
+
+- Migrations live in `migrations/` and are applied by the Wrangler D1 migrator.
+  They are forward-only; never edit an applied migration.
+- Identity tables are generated from the authentication library configuration:
+  run `npm run auth:schema`, review the produced SQL, then add it as a new
+  numbered migration. Do not hand-edit provider tables.
+- Test locally against a fresh database, then against the existing local database
+  to prove the migration applies to populated state.
+- Every tenant-scoped table must include `business_id`, its foreign key and the
+  indexes the access patterns need. `tests/database/migrations.test.ts` asserts
+  the resulting constraints.
+- Remote application (`npm run db:migrate:remote`) requires explicit authorization
+  and a backup; no remote database exists yet.
+
+## 11. Deployment (planned)
 
 Not performed in this milestone. When it begins:
 
 1. Build and test locally first, including the Worker runtime path
    (`wrangler dev` / workerd) with the deployment compatibility date.
-2. Deploy to a preview environment, verify routes, headers, data isolation and
+2. Provision the remote D1 database, apply migrations, and confirm the binding in
+   a preview environment before serving traffic.
+3. Set `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` and email provider secrets as
+   platform secret bindings; never in a committed file.
+4. Deploy to a preview environment, verify routes, headers, data isolation and
    signed-out behaviour on the preview origin.
-3. Obtain explicit authorization before publishing to production.
-4. Apply migrations through a controlled path with a backup taken first.
-5. Record the deployed commit SHA and verify the environment reports that version.
+5. Obtain explicit authorization before publishing to production.
+6. Record the deployed commit SHA and verify the environment reports that version.
 
 Never deploy from a dirty working tree, and never publish a build that has not
-passed CI.
+passed CI and the runtime checks.
 
-## 11. Rollback
+## 12. Rollback
 
 - Code: redeploy the last known-good commit; do not revert published migrations.
 - Data: restore from backup only as an explicit, audited incident action.
 - If a financial defect is found, prefer a correcting entry over a data edit, and
   record the incident and its resolution.
 
-## 12. Definition of done
+## 13. Definition of done
 
 A milestone is done when its behaviour is implemented, tested at the appropriate
 levels, documented with accurate status, committed and pushed, and its completion

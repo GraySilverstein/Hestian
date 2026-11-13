@@ -1,190 +1,200 @@
 # Security
 
-Status: security architecture documented. **No authentication, session, role or
-tenant enforcement exists in the codebase.** There is no user data to protect yet,
-and this document must not be read as evidence that the system is secure.
-
-What *does* exist and is tested: fail-closed configuration validation, rejection
-of secrets in `NEXT_PUBLIC_*` variables, structured redacting logs, exact money
-handling, and an import-graph gate that prevents analytical code from reaching
-financial authority.
+Status after Milestone 1. This document separates **implemented and tested**
+controls from **partial**, **planned** and **unverified** ones. It must not be
+read as a claim that Hestian is production-ready: no production deployment, email
+delivery, MFA or external security review exists.
 
 ---
 
-## 1. Security principles
+## 1. What is actually enforced
 
-1. **Deny by default.** Unknown identity, unknown permission, unknown record or
-   unknown state results in refusal, not a permissive fallback.
-2. **The server decides.** A browser can hide a button; only the server can deny
-   an action. No client-supplied tenant, role, user id or amount is trusted.
-3. **Least data.** Return only the fields the current view needs; never return a
-   full record because it is convenient.
-4. **Secrets stay server-side.** Credentials live in platform secret storage,
-   are read in the operation that needs them, and never appear in bundles,
-   client state, logs, error messages or URLs.
-5. **Evidence before consequence.** Payment-related and reconciliation actions
-   require verified evidence and explicit authorization.
-6. **Consequential actions are auditable.** If it changes money, access or
-   obligations, it produces an audit event.
-7. **Fail closed on ambiguity.** A cross-tenant or unresolved-tenant record is
-   treated as absent, not as accessible.
+| Control | Status | Evidence |
+| --- | --- | --- |
+| Password hashing (scrypt via Better Auth) | **implemented, tested** | `tests/identity/authentication.test.ts`; D1 query shows hash, no plaintext |
+| Session creation, expiry, revocation | **implemented, tested** | session rows with 8h lifetime; sign-out invalidates immediately (`verify:runtime`) |
+| Server-side session resolution | **implemented, tested** | `getSession` reads the verified cookie, never a client id |
+| Signed-in-only routes | **implemented, tested** | `/workspace` returns 307 to `/sign-in?next=…`; runtime check |
+| Tenant isolation | **implemented, tested (SQLite)** | two-tenant suite: forged ids, cross-tenant membership changes, invitation email mismatch |
+| Role/permission authorization | **implemented, tested** | exhaustive matrix in `tests/security/authorization.test.ts` |
+| Central permission gate | **implemented** | `authorize(context, permission)` used by every tenancy operation |
+| Login abuse protection | **implemented, tested (live)** | DB-backed rate limit: 5 sign-in attempts, then 429 |
+| CSRF / cross-origin protection | **implemented, tested** | Better Auth origin validation; foreign origin rejected; same-origin helper for custom routes |
+| Security headers | **implemented, tested** | CSP with nonce, no `unsafe-inline` scripts, `frame-ancestors 'none'`, nosniff, HSTS over HTTPS |
+| Request size limit | **implemented, tested** | 256 KiB middleware cap (413), 64 KiB JSON parser cap |
+| Secret redaction in logs | **implemented, tested** | redaction at depth, bounded payloads |
+| Secrets kept out of the client | **implemented, tested** | config rejects `NEXT_PUBLIC_*` secret names; no secret in any `"use client"` module |
+| Audit trail | **implemented, tested** | hash chain verified; UPDATE/DELETE rejected by triggers |
+| Invitation tokens hashed at rest | **implemented, tested** | SHA-256 of 256-bit token, single-use, 7-day expiry |
+| Password reset | **partial** | tokens issued and consumed; email delivery unconfigured |
+| Email verification | **partial** | tokens issued on sign-up; no provider, accounts stay unverified |
+| MFA | **not implemented** | provider supports it; no schema or UI enabled |
+| Production secrets/rotation | **planned** | local `.dev.vars` only; no remote secret set |
+| Backup/restore rehearsal | **unverified** | no remote database exists |
+| Penetration test / external review | **none** | not performed |
 
-## 2. Trust boundaries
+## 2. Principles
 
-```
-untrusted              │ trusted boundary                    │ authoritative
-───────────────────────┼─────────────────────────────────────┼──────────────────
-browser (JS, forms,    │ route handler / server action       │ D1, R2
-URLs, cookies)         │  → session verification             │ (single primary)
-webhook payloads       │  → tenant + permission decision     │
-provider APIs          │  → validation → module → gate        │ audit log
-model output           │                                     │
-───────────────────────┴─────────────────────────────────────┴──────────────────
-Everything left of the boundary is attacker-controlled input.
-Model output is untrusted data, never an instruction and never a write permit.
-```
+1. Deny by default: missing identity, membership, permission or state means refusal.
+2. The server decides: no client-supplied tenant, role, user id or amount is trusted.
+3. Least data: responses carry only what the view needs; lists do not expose emails
+   to roles without `business.manage_members`.
+4. Secrets stay server-side: bindings only, never in bundles, URLs, logs or errors.
+5. Evidence before consequence: consequential actions are audited and, where
+   privileged, require recent authentication.
+6. Fail closed: configuration errors throw; ambiguous tenant resolution returns
+   `NOT_FOUND`.
+7. No invented cryptography: standard scrypt password hashing, standard session
+   cookies, SHA-256 for integrity, Web Crypto for entropy.
 
-## 3. Threat model
+## 3. Authentication
 
-| # | Threat | Primary controls | Status |
-| --- | --- | --- | --- |
-| T-01 | Cross-tenant data read via forged id or query parameter | Tenant derived from server session; tenant in every key; deny-by-default; two-tenant tests | planned |
-| T-02 | Privilege escalation by client-claimed role | Role read from membership records server-side; no role from headers/cookies | planned |
-| T-03 | Credential/token theft from browser or bundle | No secrets in client code; platform secret bindings; no `NEXT_PUBLIC_*` secrets (config guard implemented) | partially |
-| T-04 | Webhook forgery causing fake revenue | Signature verification before state change; unverified deliveries stored but inert | planned |
-| T-05 | Replay/duplicate webhook creating duplicate money effects | Provider event id + idempotency key uniqueness; replay returns existing result | planned |
-| T-06 | AI-induced financial mutation | Static import gate; no analytical→authority edges; no model-authored posting API | **enforced (static)** |
-| T-07 | Prompt injection via imported content influencing actions | Model output treated as data; recommendations require human-authorized operation | planned |
-| T-08 | Silent financial restatement | Append-only books; reversal records; audit trail | planned |
-| T-09 | Insider abuse by a privileged member | Role ceilings, separation of duties for payments, full audit trail, least privilege | planned |
-| T-10 | Secret leakage through logs/errors | Redacting logger (implemented); generic client errors; no raw payload logging | partially |
-| T-11 | Dependency compromise | Lockfile, pinned versions, CI install from lockfile, review of new dependencies | partially |
-| T-12 | Enumeration of other tenants' records via error differences | `NOT_FOUND` for both absent and unauthorized resources | planned |
-| T-13 | Session fixation / theft | Server-issued sessions, rotation on privilege change, short lifetime, secure cookies | planned |
-| T-14 | Denial of service through expensive requests | Bounded request size, pagination, chunked jobs, platform limits | planned |
-| T-15 | Backup or export exfiltration | Access-controlled exports, audit of export actions, no public R2 objects | planned |
+**Provider:** Better Auth 1.7.22, configured in
+`src/modules/identity/auth-options.ts` and wired to Cloudflare bindings in
+`src/modules/identity/auth.ts`.
 
-## 4. Authentication (planned)
+- **Registration:** email + password, name. Password minimum 12 characters.
+- **Hashing:** scrypt with per-password salt, stored in `identity_account.password`.
+  Plaintext is never stored, logged or returned.
+- **Sign-in:** generic failure message for unknown accounts and wrong passwords;
+  account enumeration is not possible from the response.
+- **Sessions:** opaque tokens, hashed by the provider, stored in `identity_session`;
+  8-hour lifetime; refreshed (`updateAge`) every 15 minutes; cookie cache disabled
+  so revocation is immediate.
+- **Cookies:** `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` only when
+  `HESTIAN_ENV=production`.
+- **Revocation:** sign-out removes the session; "sign out everywhere" revokes all
+  sessions for the user.
+- **Password reset:** Better Auth issues a single-use token; the reset endpoint
+  validates it and revokes sessions on success.
+- **Rate limiting:** database storage (`identity_rate_limit`), 5 sign-in attempts
+  per minute per key, 5 sign-ups per 5 minutes, 3 reset requests per 5 minutes.
+- **Recent authentication:** privileged tenancy operations require a session
+  created within the last hour (`isRecentlyAuthenticated`).
 
-- Use the platform-managed sign-in (Freebuff Sign in) when the milestone that
-  implements identity begins. Do not hand-roll cryptography.
-- Identity is established by the server from a verified provider assertion; a
-  user id in a request body or query is never authentication.
-- Sessions: secure, HTTP-only, same-site cookies; rotation on privilege change;
-  explicit revocation; no long-lived tokens in browser storage.
-- Signed-out requests to private routes return `401`. A sign-in redirect is not
-  proof of authentication; tests must complete a full sign-in, callback, session
-  and sign-out flow on the deployed origin before the feature is called working.
+**Partial:** no email is sent. `createMailer` returns "unconfigured" unless
+`RESEND_API_KEY` and `EMAIL_FROM` are bound, and the application records that
+outcome instead of pretending delivery. Because verification cannot be completed,
+`requireEmailVerification` is `false`; this must be revisited before production.
 
-## 5. Authorization (planned)
+**Not implemented:** MFA/TOTP, passkeys, OAuth providers, device management,
+password-breach checks.
 
-Role-based access with resource-level narrowing. Roles are ceilings; grants can
-remove capability but never add it.
+## 4. Authorization and tenancy
 
-| Capability | owner | accountant | employee | contractor | agency |
-| --- | --- | --- | --- | --- | --- |
-| View financial reports | yes | yes | scoped | no | scoped |
-| Create/edit draft entries | yes | yes | no | no | no |
-| Post entries | yes | yes | no | no | no |
-| Reconcile | yes | yes | no | no | no |
-| Manage members | yes | no | no | no | no |
-| Approve payments | yes | no | no | no | no |
-| Execute payments | owner only, explicit confirmation | no | no | no | no |
-| View own project costs | yes | yes | scoped | scoped | scoped |
+- A user may belong to many businesses; a business has many members.
+- Roles: `owner`, `accountant`, `employee`, `contractor`, `agency`.
+- `hasPermission` is a pure, exhaustive matrix; roles are ceilings and unknown
+  roles grant nothing.
+- `resolveTenantContext(userId, candidateBusinessId)` derives membership from the
+  database. The candidate id is never proof of ownership.
+- Failure to resolve returns `NOT_FOUND`, not `FORBIDDEN`, to avoid confirming that
+  another tenant's business exists.
+- Invitations bind to an email address; acceptance requires the signed-in user's
+  email to match, otherwise `NOT_FOUND`.
+- A business must retain at least one active owner; demoting or removing the last
+  owner is rejected with `INVARIANT_VIOLATION`.
+- Resource-level scoping: membership mutations include `business_id` in the WHERE
+  clause, so a guessed membership id in another tenant matches nothing.
+- Privileged operations also require recent authentication and are rate limited.
 
-Rules:
+**Not yet:** per-resource grants that narrow a role, approval policies, separation
+of duties for payments (no payments exist), and background-job authorization
+(there are no background jobs).
 
-- Authorization is evaluated on the server for every read and write. Client-side
-  gating is cosmetic.
-- Cross-tenant access returns `NOT_FOUND`, never `FORBIDDEN`, to avoid confirming
-  existence.
-- Every permission decision is a typed result with a reason code, so denials are
-  auditable without leaking data.
+## 5. CSRF and request integrity
 
-## 6. Tenant isolation
+- Better Auth validates the request origin for its endpoints; a foreign origin is
+  rejected (verified live).
+- Hestian's own helper `isSameOrigin` fails closed when `Origin` is missing and is
+  used by custom route handlers.
+- Server Actions rely on Next.js's built-in same-origin enforcement in addition to
+  session cookies being `SameSite=Lax`.
+- All JSON bodies are content-type checked, size limited and schema validated.
+- There is no double-submit CSRF token. This is acceptable only while all
+  mutations require same-origin requests and `SameSite` cookies; a token should be
+  added before any cross-site embedding or form POST integration.
 
-Because D1 is SQLite-compatible, there is no row-level security. Isolation must be
-enforced by construction:
+## 6. Security headers
 
-1. `tenant_id` is a required column of every tenant-scoped table and part of its
-   primary/unique keys.
-2. Repositories take a `TenantContext` value, never a raw id from the request.
-3. No query function exists without a tenant parameter; module query contracts
-   scope by tenant internally.
-4. Composite unique constraints include `tenant_id`, so a global-unique assumption
-   cannot leak into a multi-tenant deployment.
-5. The test suite must include a two-tenant isolation suite per module; a module
-   without it is not complete.
+`src/core/security-headers.ts`, applied by `src/middleware.ts`:
 
-Decision record: [decisions/0005-tenant-isolation.md](decisions/0005-tenant-isolation.md).
+- CSP: `default-src 'self'`; scripts require a per-request nonce with
+  `strict-dynamic`; no `unsafe-inline` for scripts; `object-src 'none'`;
+  `frame-ancestors 'none'`; `base-uri 'self'`; `form-action 'self'`.
+- `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+  strict-origin-when-cross-origin`, `X-Frame-Options: DENY`,
+  `Permissions-Policy` disabling camera/microphone/geolocation/payment/usb,
+  `Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy: same-origin`.
+- HSTS only when the request arrived over HTTPS.
 
-## 7. Credentials and integration secrets
+Verified: the rendered HTML carries the request nonce, and the header is present on
+HTML and API responses. `style-src` still permits `unsafe-inline` because React
+emits inline style attributes; scripts are the sensitive surface.
 
-- Provider credentials are encrypted at rest using a key held in platform secret
-  storage, never in the database or repository. Envelope encryption with a
-  per-record data key allows rotation without re-encrypting everything.
-- Decryption happens inside the operation that needs the credential; plaintext is
-  never returned to callers, logged, or cached across requests.
-- Tokens are refreshed with the stored refresh credential and re-encrypted; a
-  revoked connection is marked `revoked` and blocks further calls.
-- No secret is ever placed in a `NEXT_PUBLIC_*` variable. `src/config/env.ts`
-  rejects such names at startup.
-- `.env` files are ignored by git; `.env.example` documents names only.
+## 7. Secrets
 
-## 8. Payment-related actions
+- Local: `.dev.vars` (git-ignored) with a random 32+ character
+  `BETTER_AUTH_SECRET`; `.dev.vars.example` documents names only.
+- Production: platform secret bindings (`BETTER_AUTH_SECRET`, `RESEND_API_KEY`,
+  `EMAIL_FROM`, `BETTER_AUTH_URL`). Nothing is committed.
+- `getAuth()` fails closed when the secret is shorter than 32 characters or the
+  base URL is missing/invalid.
+- Logs redact keys matching secret/token/password/authorization patterns; audit
+  metadata is redacted before hashing.
+- No key rotation, envelope encryption or KMS integration exists yet: integration
+  credentials are not stored in this milestone.
 
-- Payment execution is out of scope for now. When introduced it requires:
-  explicit human confirmation with the amount and counterparty displayed,
-  step-up authentication, separation of duties (initiator ≠ approver), an
-  idempotency key, a recorded approval, and an audit event.
-- An AI recommendation can never trigger a payment, even indirectly.
-- Amounts and counterparties are re-read and re-validated server-side at
-  execution time; nothing displayed in the browser is trusted.
+## 8. Audit
 
-## 9. Audit
+- Append-only `audit_event` table with `prev_hash` and `hash` (SHA-256 over
+  canonical content plus the previous hash).
+- `prev_hash` is unique, which serialises concurrent appends: a racing writer
+  loses the constraint and retries against the new head.
+- Database triggers reject UPDATE and DELETE.
+- Recorded actions include sign-up, sign-in success/failure, sign-out, session
+  revocation, password reset request/completion, business creation, invitation
+  creation/acceptance, role changes and member removal.
+- Audit metadata is redacted before hashing; no emails, tokens or passwords.
+- Direct calls to `/api/auth/*` are audited by the route handler; server actions
+  audit their own operations. Actor attribution for HTTP-level auth events is not
+  available (the response does not carry the user id).
 
-Consequential actions produce an audit event containing actor, tenant, action,
-target, outcome, correlation id and timestamp. Audit writes are part of the same
-transaction as the action; if the audit write fails the action fails. Audit
-events never contain credentials, tokens or full provider payloads.
+**Limitations:** the chain is tamper-evident, not externally anchored (no
+notarisation or off-platform copy). Audit and the audited change are not written in
+one D1 transaction, so a crash between them can leave a change without its event;
+this is documented rather than hidden. Retention is undecided.
 
-## 10. Logging and error hygiene
+## 9. Known gaps and vulnerabilities
 
-- One JSON line per event with stable names; sensitive keys redacted at any depth;
-  payloads bounded; circular structures described, not followed.
-- Client-facing errors carry a code and a generic message. Stack traces, SQL,
-  provider payloads and internal identifiers stay server-side.
-- `no-console` is enforced outside the logger module.
-- Correlation ids allow tracing without exposing tenant data in URLs.
+1. **Email verification cannot complete** without a provider; accounts are
+   unverified. A production launch must either configure delivery and enable
+   verification, or explicitly accept unverified accounts.
+2. **No MFA**, despite privileged financial roles being planned.
+3. **No production deployment**, so TLS, HSTS at the edge, secret binding,
+   remote D1 isolation, and rebuild-from-scratch have not been exercised.
+4. **No penetration test**, threat-model review with an external party, or
+   dependency review beyond `npm audit`.
+5. **Rate limiting is per key** with a fixed window; distributed abuse across keys
+   is only partly mitigated. No CAPTCHA or bot detection.
+6. **Session expiry is not covered by an automated test**; it relies on Better
+   Auth's enforcement and the stored `expiresAt`.
+7. **No CSRF token**, no CSP violation reporting, no WAF rules.
+8. **No audit retention/export or key rotation procedure.**
+9. **No malware scanning** for uploads because uploads do not exist yet; the
+   architecture for R2 documents must include scanning before launch.
+10. **SSRF surface is currently zero** (no user-supplied URLs are fetched); this
+    must be revisited with integrations.
 
-## 11. Dependency and supply chain
+## 10. Review checklist
 
-- Lockfile committed; CI installs with `npm ci`.
-- Dependencies are added only with a stated need. Authentication, cryptography,
-  money and ORM choices get an ADR.
-- No dependency may be introduced that reads tenant data at build time.
-
-## 12. Known limitations and debt
-
-1. No authentication, sessions, roles or tenant records exist.
-2. No database, therefore no isolation tests and no encryption-at-rest design in
-   practice.
-3. No rate limiting, CSRF strategy, security headers policy or CSP yet. Next.js
-   defaults are not a policy; define one before exposing a real deployment.
-4. No secrets management integration; only local `.env` and platform secrets.
-5. No dependency or container scanning beyond GitHub's defaults.
-6. No incident response runbook, key rotation drill or backup restore test.
-7. Worker runtime security characteristics (CPU limits, cold starts, log access)
-   are unverified.
-
-## 13. Review checklist for security-relevant changes
-
-- [ ] Identity and tenant are derived server-side, never from the payload.
-- [ ] Every new table has `tenant_id` in its keys.
-- [ ] Every new route checks authentication and authorization before data access.
-- [ ] New inputs are validated at the boundary and typed inward.
-- [ ] No secret, token or raw provider payload is logged or returned.
-- [ ] Consequential actions emit an audit event in the same transaction.
-- [ ] Errors use domain codes; cross-tenant cases return `NOT_FOUND`.
-- [ ] Two-tenant isolation tests added or updated.
+- [ ] Identity and tenant derived server-side.
+- [ ] Every new table has `business_id` when tenant-scoped.
+- [ ] Every protected route checks session, membership, permission and resource scope.
+- [ ] New inputs validated with Zod; bodies size limited.
+- [ ] No secret, token or raw provider payload logged, returned or put in a URL.
+- [ ] Consequential actions audited with redacted metadata.
+- [ ] Cross-tenant cases return `NOT_FOUND`.
+- [ ] Two-tenant tests and the permission matrix updated.
 - [ ] No analytical module gained an import edge into financial authority.
+- [ ] Security headers unchanged or deliberately amended.

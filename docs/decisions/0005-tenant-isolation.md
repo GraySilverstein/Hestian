@@ -56,6 +56,12 @@ tenant context, and CI that runs the isolation suite for every module.
 - **Application filtering only, with no schema constraints.** Rejected: a single
   missed filter is a breach; composite keys at least prevent cross-tenant references.
 
+## Implementation note (Milestone 1)
+
+Implemented by [0010](0010-tenant-authorization.md). The concrete ownership column
+is `business_id` rather than `tenant_id`; the concept and the rules below are
+unchanged.
+
 ## Follow-ups
 
 1. Implement `TenantContext` and the repository guard in Milestone 2.

@@ -17,34 +17,57 @@ whose foundation must be reliable, auditable and secure.
 
 ---
 
-## Status: Milestone 0 — foundation only
+## Status: Milestone 1 — runtime, security foundation and tenancy
 
-This repository currently contains an **architectural foundation**, not a
-product. Nothing financial is implemented, and nothing pretends to be.
+The application now runs as a verified Cloudflare Worker with a persistent D1
+database, real authentication, tenant-scoped authorization and a tamper-evident
+audit trail. It still contains **no financial records and no AI**.
 
 **Implemented and verified**
 
-- Strict TypeScript project on Next.js 16 (App Router) with a server-rendered shell.
-- 11 bounded contexts declared as code with enforced dependency rules.
-- Exact money primitives (integer minor units, no floating point).
-- Typed error, `Result`, identifier, logging and configuration conventions.
-- 35 automated tests across 5 suites, including an architecture boundary gate.
-- ESLint and TypeScript configuration, GitHub Actions CI.
-- Architecture, domain, integrity, security, governance, workflow, testing and
-  roadmap documentation with six Architecture Decision Records.
+- Cloudflare-targeted build (`@opennextjs/cloudflare` 1.20.17) and execution under
+  `wrangler dev` / workerd with real D1 bindings.
+- D1 schema and forward-only migrations: identity, tenancy, audit, rate limiting.
+- Email/password authentication with scrypt hashing, database-backed sessions,
+  revocation, password reset plumbing, and database-backed rate limiting.
+- Tenants (businesses), memberships, five roles, a central permission gate,
+  invitations with hashed single-use tokens, and a last-owner invariant.
+- Security headers with a nonce-based CSP, same-origin enforcement, request size
+  limits, generic error responses and automatic secret redaction in logs.
+- Append-only, hash-chained audit log with database triggers rejecting updates and
+  deletes.
+- 79 tests across 12 suites plus a 17-check runtime verification script.
 
 **Not implemented (deliberately)**
 
 - Accounting engine, chart of accounts, journal, balances, invoices, payments.
-- Authentication, sessions, tenants, roles or any authorization enforcement.
+- Email delivery: verification and reset tokens are issued, but no provider is
+  configured, so no message is sent and accounts remain unverified.
+- MFA: the authentication provider supports it; Hestian does not enable it yet.
 - Bank feeds, payment execution, tax filing, payroll, Shopify, social publishing.
 - AI features of any kind.
-- Database schema, migrations or persistence.
-- Any sample balance, chart or fixture that could be mistaken for real activity.
+- Production deployment: no remote D1 database, Worker version or secret binding
+  has been created.
 
 Every planned capability is marked as planned in [docs/ROADMAP.md](docs/ROADMAP.md).
-The deployment target (Cloudflare Workers through Freebuff Sites) has **not** been
-exercised: `next build` passes locally, but no Worker build or deployment exists yet.
+
+---
+
+## Verification performed
+
+| Check | Result |
+| --- | --- |
+| `npm run check` (typecheck, lint, 79 tests) | pass |
+| `npm run build` (Next.js production build) | pass |
+| `npm run build:worker` (OpenNext → Worker bundle) | pass |
+| `wrangler dev` + `npm run verify:runtime` (17 checks) | pass |
+| Live sign-up → session → sign-out in workerd | pass |
+| Foreign-origin authentication request | rejected (4xx) |
+| Login rate limit after 5 attempts | 429 |
+| Password stored as scrypt hash, plaintext absent | confirmed via D1 query |
+
+Not verified: production deployment, email delivery, MFA, load/performance, and
+automated browser end-to-end flows.
 
 ---
 
@@ -75,18 +98,19 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing the structure.
 
 | Concern | Choice | Notes |
 | --- | --- | --- |
-| Runtime | Node.js 24 for development; Cloudflare Workers as deployment target | No Node server, filesystem, cron or background daemons in production. |
-| Framework | Next.js 16 (App Router), React 19 | Server Components and route handlers keep authority on the server. |
-| Language | TypeScript 5.9, `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` | |
-| Validation | Zod 4 | Configuration and external input boundaries. |
-| Tests | Vitest 5 | Node environment; no network access in tests. |
-| Lint | ESLint 10 + typescript-eslint | `no-console` outside the logging module. |
-| Package manager | npm (lockfile committed) | |
-| Hosting / data | Freebuff Sites (Workers, D1, R2, Sign in) — planned | Not provisioned in this milestone. |
+| Runtime | Cloudflare Workers (workerd) | No filesystem, daemons or long CPU work. |
+| Framework | Next.js 16.4.6 (App Router), React 19.3.1 | Server Components and route handlers keep authority server-side. |
+| Adapter | `@opennextjs/cloudflare` 1.20.17, Wrangler 4.161.0 | Pinned; `middleware.ts` is retained because `proxy.ts` is unsupported. |
+| Database | Cloudflare D1 (SQLite) | No row-level security, no interactive transactions. |
+| Authentication | Better Auth 1.7.22 | Email/password, scrypt, DB sessions, DB rate limiting. |
+| Validation | Zod 4 | Boundaries and configuration. |
+| Tests | Vitest 5.1 + `node:sqlite` test adapter | Real SQL, constraints and triggers in tests. |
+| Lint / types | ESLint 10, TypeScript 5.9 strict | |
+| Hosting | Freebuff Sites — planned, not provisioned | Deployment path documented, not executed. |
 
-Operational constraints of the target runtime and their architectural
-consequences are documented in
-[docs/decisions/0002-runtime-and-deployment.md](docs/decisions/0002-runtime-and-deployment.md).
+Constraints and consequences:
+[docs/decisions/0002-runtime-and-deployment.md](docs/decisions/0002-runtime-and-deployment.md)
+and [0008-d1-persistence.md](docs/decisions/0008-d1-persistence.md).
 
 ---
 
@@ -94,34 +118,28 @@ consequences are documented in
 
 ```
 .
-├── .github/workflows/ci.yml      # typecheck, lint, test, build
-├── docs/                         # architecture and governance documentation
-│   └── decisions/                # Architecture Decision Records
+├── .github/workflows/ci.yml       # typecheck, lint, test, build, Worker build
+├── docs/                          # architecture, security, governance, ADRs
+├── migrations/                    # forward-only D1 migrations
+├── public/_headers                # static asset caching
+├── scripts/
+│   ├── generate-auth-schema.ts    # Better Auth schema → migration SQL
+│   └── verify-runtime.mjs         # HTTP checks against a running Worker
 ├── src/
-│   ├── app/                      # Next.js App Router: shell and route handlers
-│   │   ├── api/health/route.ts   # read-only liveness and configuration check
-│   │   ├── globals.css           # design tokens
-│   │   ├── layout.tsx
-│   │   └── page.tsx              # foundation surface, driven by the module registry
-│   ├── config/env.ts             # validated server configuration, fails closed
-│   ├── core/                     # environment-independent primitives
-│   │   ├── errors.ts             # typed error codes and DomainError
-│   │   ├── ids.ts                # branded, validated identifiers
-│   │   ├── logging/              # structured JSON logs with redaction
-│   │   ├── money.ts              # exact integer minor-unit arithmetic
-│   │   └── result.ts             # explicit success/failure values
-│   └── modules/                  # bounded contexts
-│       ├── manifest.ts           # module registry and dependency rules
-│       └── <module>/README.md    # ownership, exclusions, allowed dependencies
-├── tests/
-│   ├── architecture/             # boundary enforcement
-│   ├── config/
-│   └── core/
-├── .env.example
-├── eslint.config.mjs
-├── next.config.ts
-├── tsconfig.json
-└── vitest.config.ts
+│   ├── app/                       # App Router: shell, auth pages, workspace
+│   ├── config/                    # env validation and binding types
+│   ├── core/                      # money, ids, result, errors, logging, http,
+│   │                              # crypto, rate limit, security headers
+│   ├── middleware.ts              # CSP nonce + security headers + body limit
+│   └── modules/
+│       ├── manifest.ts            # module registry and dependency rules
+│       ├── audit/                 # hash-chained append-only log
+│       ├── identity/              # Better Auth wiring, sessions, email port
+│       └── tenancy/               # businesses, memberships, roles, invitations
+├── tests/                         # unit, security, database, architecture
+├── open-next.config.ts
+├── wrangler.jsonc
+└── package.json
 ```
 
 ---
@@ -129,17 +147,31 @@ consequences are documented in
 ## Commands
 
 ```bash
-npm ci              # install from the lockfile
-npm run dev         # development server
-npm run typecheck   # tsc --noEmit
-npm run lint        # eslint .
-npm run test        # vitest run
-npm run check       # typecheck + lint + test
-npm run build       # production build
+npm ci                    # install from the lockfile
+npm run dev               # Next.js dev server with local bindings
+npm run check             # typecheck + lint + tests
+
+npm run build:worker      # OpenNext build → .open-next/worker.js
+npm run db:migrate:local  # apply migrations to local D1
+npm run start:worker      # wrangler dev on 127.0.0.1:8787
+npm run verify:runtime    # 17 live checks against that Worker
+
+npm run auth:schema       # regenerate identity schema after auth changes
+npm run db:migrate:remote # apply migrations to the deployed D1 (requires auth)
+npm run deploy:worker     # build and deploy (requires explicit authorization)
 ```
 
-Local environment: copy `.env.example` to `.env.local`. No secrets are required
-in this milestone. Never commit an environment file.
+Local setup:
+
+```bash
+cp .env.example .env.local
+cp .dev.vars.example .dev.vars   # replace BETTER_AUTH_SECRET with 32+ random chars
+npm run db:migrate:local
+npm run start:worker
+```
+
+No secret is committed. `.dev.vars` is git-ignored and ignored by ESLint's
+environment, and production values are platform secret bindings.
 
 ---
 
@@ -147,23 +179,18 @@ in this milestone. Never commit an environment file.
 
 | Document | Purpose |
 | --- | --- |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Context, layers, module rules, runtime constraints, data ownership. |
-| [docs/DOMAIN_MODEL.md](docs/DOMAIN_MODEL.md) | Ubiquitous language, aggregates, state machines and relationships. |
-| [docs/FINANCIAL_INTEGRITY.md](docs/FINANCIAL_INTEGRITY.md) | Numbered invariants, authority boundaries and AI prohibitions. |
-| [docs/SECURITY.md](docs/SECURITY.md) | Threat model, tenancy, authorization and credential handling. |
-| [docs/DATA_GOVERNANCE.md](docs/DATA_GOVERNANCE.md) | Data classification, provenance, retention and AI data use. |
-| [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md) | Mandatory commit/push workflow, review gates and deployment. |
-| [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) | Test categories, current coverage and planned suites. |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | Milestones, exit criteria and explicitly deferred work. |
-| [docs/decisions/](docs/decisions/) | Architecture Decision Records. |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, module rules, runtime constraints, request lifecycle. |
+| [docs/DOMAIN_MODEL.md](docs/DOMAIN_MODEL.md) | Ubiquitous language, aggregates, state machines. |
+| [docs/FINANCIAL_INTEGRITY.md](docs/FINANCIAL_INTEGRITY.md) | Numbered invariants and authority boundaries. |
+| [docs/SECURITY.md](docs/SECURITY.md) | Implemented controls, threat model, limitations. |
+| [docs/DATA_GOVERNANCE.md](docs/DATA_GOVERNANCE.md) | Classification, retention, AI data rules. |
+| [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md) | Commit/push workflow, migrations, deployment. |
+| [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) | Suites, runtime verification, gaps. |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Milestones and explicitly deferred work. |
+| [docs/decisions/](docs/decisions/) | Architecture Decision Records 0001–0011. |
 
----
+Working on this repository: `main` is canonical; every meaningful change is
+committed and pushed with verification. See
+[docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md).
 
-## Working on this repository
-
-`main` is canonical and every meaningful change is committed and pushed to it.
-See [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md) for the required
-sequence (inspect → verify → review diff → commit → push → verify remote).
-
-Do not start the Financial Integrity Core, or any other milestone, without
-review: [docs/ROADMAP.md](docs/ROADMAP.md).
+Do not begin the Financial Integrity Core without review.

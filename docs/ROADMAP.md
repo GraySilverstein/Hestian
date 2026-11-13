@@ -13,7 +13,7 @@ waits for review.
 
 ### Milestone 0 — Foundation, architecture and repository setup
 
-**Status: complete, awaiting review.**
+**Status: complete, reviewed.**
 
 Delivered:
 
@@ -30,64 +30,83 @@ Delivered:
 Exit criteria met: `npm run check` and `npm run build` pass; boundary gate passes;
 no financial behaviour claimed; no fixtures presented as data.
 
+### Milestone 1 — Runtime validation, security foundation and tenancy
+
+**Status: complete, awaiting review.**
+
+Delivered:
+
+- Cloudflare-targeted build via `@opennextjs/cloudflare` 1.20.17 and Wrangler
+  4.161.0, running on workerd with real D1 bindings. Limitations recorded in
+  [decisions/0007-cloudflare-runtime-verification.md](decisions/0007-cloudflare-runtime-verification.md).
+- Forward-only D1 migrations for identity, tenancy, audit and rate limiting;
+  conventions and transaction limits in
+  [decisions/0008-d1-persistence.md](decisions/0008-d1-persistence.md).
+- Email/password authentication with scrypt hashing, database sessions,
+  revocation, password-reset plumbing, rate limiting and a documented
+  provider-dependent email gap
+  ([decisions/0009-authentication-and-sessions.md](decisions/0009-authentication-and-sessions.md)).
+- Businesses, memberships, five roles, a central permission gate, invitations with
+  hashed tokens and a last-owner invariant
+  ([decisions/0010-tenant-authorization.md](decisions/0010-tenant-authorization.md)).
+- Nonce-based CSP, security headers, same-origin enforcement, request size limits,
+  generic errors, and a 17-check runtime verification script.
+- Append-only hash-chained audit log
+  ([decisions/0011-audit-tamper-evidence.md](decisions/0011-audit-tamper-evidence.md)).
+- 79 tests across 12 suites, including real two-tenant isolation and a full
+  permission matrix.
+
+Explicitly not delivered: email delivery, MFA, production deployment, remote D1,
+R2, any financial behaviour.
+
 ---
 
 ## 2. Proposed sequence
 
 Ordering rationale: the accounting engine can be built and tested server-side
-without exposing tenant data. Authentication and tenancy must exist before any
-tenant-facing financial surface is exposed. Evidence and reconciliation depend on
-the posting model. Growth, commerce and intelligence depend on financial facts
-being trustworthy.
+without exposing tenant data. Authentication and tenancy now exist, so financial
+authority can be built next behind real boundaries. Evidence and reconciliation
+depend on the posting model. Growth, commerce and intelligence depend on financial
+facts being trustworthy.
 
-### Milestone 1 — Financial Integrity Core
+### Milestone 2 — Financial Integrity Core
 
 **Status: not started. Requires review approval.**
 
 Scope:
 
-- D1 schema and forward-only migrations for tenants' chart of accounts, periods,
+- D1 schema and forward-only migrations for chart of accounts, fiscal periods,
   financial events, journal entries and lines.
 - Deterministic posting gate implementing FI-01…FI-22.
 - Reversal and adjustment flow; immutability of posted entries.
 - Idempotency with unique constraints and replay semantics.
 - Provenance links from entry to evidence or adjustment justification.
-- Integration tests against the real schema, including constraint tests,
-  two-tenant isolation and duplicate-delivery concurrency.
-- No UI beyond a minimal, internal-only verification surface, if any.
+- Explicit transaction-boundary design for multi-write invariants on D1.
+- Integration tests against the real schema: constraints, two-tenant isolation,
+  duplicate delivery, and invariant violations.
 
-Explicitly excluded: bank feeds, payments execution, tax rules, invoices UI,
+Explicitly excluded: bank feeds, payment execution, tax rules, invoice UI,
 reporting dashboards, AI.
 
-Exit criteria: every invariant has a failing-if-violated test; no analytical
-import path exists; migrations verified on an empty and populated database;
-documented decision on transaction boundaries in D1.
-
-### Milestone 2 — Identity, tenancy and audit
-
-**Status: not started.**
-
-Scope: real sign-in through the platform provider, server-verified sessions,
-tenants and memberships, role and resource authorization, audit persistence,
-tenant context propagation, two-tenant isolation suite across existing modules.
-
-Exit criteria: complete sign-in/callback/session/sign-out flow verified on the
-preview origin; role matrix tested; cross-tenant probes return `NOT_FOUND`; audit
-written transactionally with consequential actions.
+Exit criteria: every invariant has a failing-if-violated test; no analytical import
+path exists; migrations verified on an empty and populated database; multi-write
+consistency strategy documented and tested.
 
 ### Milestone 3 — Evidence and reconciliation
 
 Scope: provider connection records, encrypted credential envelopes, webhook intake
-with signature verification and idempotent receipts, R2 document storage,
-reconciliation candidates and unresolved queues.
+with signature verification and idempotent receipts, R2 document storage with
+malware scanning before processing, reconciliation candidates and unresolved
+queues.
 
 Exit criteria: forged and replayed webhooks cannot create financial effects;
-unresolved items are visible and age correctly; every match cites evidence.
+unresolved items are visible and age correctly; every match cites evidence;
+uploads are type/size validated and scanned.
 
 ### Milestone 4 — Business operations
 
 Scope: people and contractors, projects, workflows, approvals, project costs, and
-their request path into financial events.
+their request path into financial events, reusing the Milestone 1 tenant context.
 
 ### Milestone 5 — Hestian Growth (Talos capabilities)
 
@@ -109,12 +128,13 @@ strict separation from actuals; model provider integration under the data rules 
 Exit criteria: no output can reach Layer B; forecasts are typed differently from
 actuals; every recommendation cites retrievable evidence or is marked unsupported.
 
-### Milestone 8 — Hardening, deployment and compliance readiness
+### Milestone 8 — Production hardening and launch readiness
 
-Scope: Worker build and deployment verification, security headers and CSRF
-policy, backup/restore rehearsal, rate limiting, performance measurement,
-jurisdiction-specific accounting and tax validation with qualified review,
-operational runbooks, incident response.
+Scope: authorized production deployment, remote D1 provisioning and restore
+rehearsal, managed secrets and rotation, email provider and verification
+enforcement, MFA, monitoring/alerting on audit anomalies, load and soak tests,
+incident response, backup drills, and jurisdiction-specific accounting validation
+with qualified review.
 
 ---
 

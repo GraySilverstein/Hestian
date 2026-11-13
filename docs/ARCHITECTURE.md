@@ -1,8 +1,9 @@
 # Architecture
 
-Status: foundation established (Milestone 0). No financial behaviour is
-implemented. This document describes the structure that later milestones must
-respect; anything labelled *planned* does not exist yet.
+Status: Milestone 1. The runtime, persistence, authentication and tenancy
+foundations are implemented and verified; no financial behaviour exists. This
+document records the structure later milestones must respect; anything labelled
+*planned* does not exist yet.
 
 ---
 
@@ -123,12 +124,24 @@ realtime and managed sign-in. Constraints and consequences:
 | No in-memory state across requests | No caches used for correctness. Any cache is disposable and keyed by tenant. |
 | D1 is SQLite-compatible with a single primary | Treat writes as serialized. No `SELECT … FOR UPDATE`, no advisory locks, no row-level security. Correctness must come from unique constraints, idempotency keys and conditional updates. |
 | Bounded environment variables | Configuration surface must stay small and names reused; secrets live in platform secrets, never in `NEXT_PUBLIC_*`. |
-| Build is a prebuilt Worker + assets | Next.js must go through the supported OpenNext adapter. This was **not** exercised in Milestone 0. |
+| Build is a prebuilt Worker + assets | Next.js goes through the pinned OpenNext adapter; `middleware.ts` is used instead of `proxy.ts` because the adapter does not support the latter. |
 | Browser is untrusted | Every read and write is authorized on the server. The UI may hide controls, but hiding is not enforcement. |
 
-Not yet verified: Worker bundling, D1 behaviour, request CPU limits in practice,
-and the auth integration. Treat any performance statement as unmeasured until a
-Worker build and load test exist.
+**Verified in Milestone 1** (see [SECURITY.md](SECURITY.md) and
+[decisions/0007-cloudflare-runtime-verification.md](decisions/0007-cloudflare-runtime-verification.md)):
+
+- `@opennextjs/cloudflare` 1.20.17 bundles Next.js 16.4.6 into
+  `.open-next/worker.js`; Wrangler 4.161.0 runs it on workerd with D1.
+- Real D1 bindings resolve inside the Worker: sign-up writes users, accounts and
+  sessions; sessions are read back and revoked.
+- Nonce-based CSP works because every page is dynamic; the nonce appears on the
+  emitted scripts.
+- Middleware enforces the body-size limit and injects headers on HTML and API
+  responses.
+- Static assets are served by the Worker through the `ASSETS` binding.
+
+Still unverified: production deployment, remote D1, CPU/latency under load,
+R2, scheduled jobs, and behaviour at D1 size limits. No performance claim is made.
 
 Decision record: [decisions/0002-runtime-and-deployment.md](decisions/0002-runtime-and-deployment.md).
 
@@ -138,14 +151,16 @@ The intended path for every consequential operation:
 
 ```
 request
+  → middleware: CSP nonce, security headers, body-size cap
   → route handler / server action
-  → authenticated subject                        (identity — planned)
-  → tenant resolution + permission check         (tenancy — planned)
-  → input validation at the boundary (Zod)       (implemented convention)
-  → module service (business rules, Result)      (planned)
-  → invariant gate (deterministic validators)    (planned)
-  → repository write inside a transaction        (planned)
-  → audit event                                  (planned)
+  → authenticated subject                        (identity — implemented)
+  → tenant resolution + permission check         (tenancy — implemented)
+  → input validation at the boundary (Zod)       (implemented)
+  → module service (business rules, Result)      (tenancy — implemented)
+  → invariant gate (deterministic validators)    (tenancy invariants — implemented)
+  → constrained D1 write                         (implemented, no multi-statement
+                                                  atomicity except batch())
+  → audit event                                  (implemented)
   → response (no secrets, no cross-tenant data)
 ```
 
@@ -160,20 +175,25 @@ Rules:
 
 ## 6. Data ownership
 
-Planned persistence model (no schema exists yet):
+Implemented persistence model (Milestone 1):
 
-- One D1 database; tables are owned by exactly one module and prefixed with it,
-  for example `financial_core_journal_entry`, `tenancy_membership`.
+- One D1 database (`DB` binding); tables are owned by one module and prefixed:
+  `identity_*`, `tenancy_*`, `audit_event`, `platform_rate_limit`.
 - No module reads another module's tables directly. Cross-module reads go through
-  the owning module's exported query functions, which apply tenant scoping.
-- Every tenant-scoped table carries `tenant_id` as part of its primary or unique
-  keys, so a query that forgets the tenant cannot accidentally match another
-  business.
-- Analytical modules receive read-only projections. They never receive a handle
-  that can write financial tables.
-- Foreign keys, `CHECK` constraints and unique indexes reinforce application
-  validation. Their exact D1 behaviour must be verified in the financial-core
-  milestone before being relied upon.
+  the owning module's exported functions, which apply tenant scoping.
+- Every tenant-owned table carries `business_id`; membership and invitation
+  uniqueness includes it. Resource mutation statements include it in the WHERE
+  clause, so a guessed row id in another tenant matches nothing.
+- D1 has no row-level security, no interactive transactions and no `SELECT … FOR
+  UPDATE`. Correctness comes from foreign keys, `CHECK` constraints, unique
+  indexes and conditional updates. `db.batch()` is atomic but does not roll back
+  on constraint failure, so it is used only for independent writes.
+- Identity tables are owned by Better Auth's generated schema
+  (`scripts/generate-auth-schema.ts`); Hestian does not edit them by hand.
+- Foreign keys and `CHECK` constraints are enabled by migration and exercised by
+  `tests/database/migrations.test.ts` against real SQLite.
+- Two-tenant isolation is tested at the repository level; the tests use the real
+  migrations, not mocks.
 
 ## 7. Three data layers
 
@@ -199,6 +219,13 @@ provenance. Layer A never depends on B or C. See
 | Configuration | Zod-validated on the server; fails closed; rejects `NEXT_PUBLIC_*` secret names | `src/config/env.ts` |
 | Module boundaries | Declared graph, tested against real imports | `src/modules/manifest.ts`, `tests/architecture/` |
 | HTTP | Route handlers return codes from `httpStatusFor(code)`, never ad-hoc statuses | `src/core/errors.ts` |
+| Security headers | Nonce-based CSP and standard headers applied per request | `src/core/security-headers.ts`, `src/middleware.ts` |
+| Origin checks | Same-origin required for mutations; missing `Origin` fails closed | `src/core/http.ts` |
+| Rate limits | Fixed-window counters in D1, keyed by action and subject | `src/core/rate-limit.ts` |
+| Secrets | Server-only bindings; 32+ character auth secret required; redacted from logs | `src/config/bindings.ts`, `src/core/logging/` |
+| Auth | Better Auth over D1; opaque DB sessions; immediate revocation | `src/modules/identity/` |
+| Tenant context | Derived from membership rows, never from client input | `src/modules/tenancy/repository.ts` |
+| Audit | Hash-chained append-only events with redacted metadata | `src/modules/audit/` |
 
 ## 9. Observability
 
@@ -222,23 +249,29 @@ what keeps future financial code isolated. See
 
 | Area | Status |
 | --- | --- |
-| Application shell, health endpoint | Implemented |
-| Core primitives (money, ids, result, errors, logging, config) | Implemented |
-| Module registry + boundary gate | Implemented |
-| Authentication, tenancy, audit persistence | Planned |
-| Database schema and migrations | Planned |
+| Application shell, health endpoint | Implemented, tested |
+| Core primitives (money, ids, result, errors, logging, config) | Implemented, tested |
+| HTTP security helpers, CSP, rate limiting | Implemented, tested |
+| Module registry + boundary gate | Implemented, tested |
+| Authentication and sessions | Implemented, tested (email delivery partial) |
+| Tenancy, roles, invitations, tenant isolation | Implemented, tested |
+| Audit trail (hash chain, append-only triggers) | Implemented, tested |
+| Database schema and migrations | Implemented, tested locally |
+| Cloudflare Worker build and local workerd run | Implemented, verified |
+| Production deployment, remote D1, secrets bindings | Deferred, not authorized |
 | Accounting engine | Planned |
 | Reconciliation | Planned |
 | Growth / commerce / intelligence | Planned |
-| Worker build and deployment | Planned, unverified |
 
 ## 12. Open architectural questions
 
-1. **Transaction strategy on D1.** Which operations need multi-statement
-   atomicity, and does D1's batch transaction cover them? Must be verified, not
-   assumed.
+1. **Transaction strategy on D1.** Milestone 1 established the constraint (no
+   interactive transactions; `batch()` is atomic but does not roll back on
+   constraint failure) and avoided multi-write invariants. The financial core
+   must decide how posting, balances and audit stay consistent; see
+   [decisions/0008-d1-persistence.md](decisions/0008-d1-persistence.md).
 2. **Document storage.** R2 object keys, encryption, and retention for invoice
-   evidence.
+   evidence. Not started.
 3. **Period control granularity.** Calendar month only, or tenant-defined
    fiscal periods.
 4. **Multi-currency.** Whether the first financial milestone stores a functional
@@ -248,8 +281,9 @@ what keeps future financial code isolated. See
 6. **Intelligence data boundary.** What tenant data may leave the platform for
    model inference, and under which contractual terms.
 7. **Audit retention and export.** Format, retention period and tenant-facing
-   access.
-8. **Worker deployment verification.** Version pinning of Next.js/OpenNext and
-   the compatibility date.
+   access. The chain exists; retention and anchoring do not.
+8. **Email provider and verification.** Delivery is unconfigured, so accounts
+   remain unverified; enabling `requireEmailVerification` depends on choosing a
+   provider and a sender domain.
 
 These are tracked as decisions to be made, not decisions already made.

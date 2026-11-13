@@ -14,6 +14,11 @@ supersedes the old one and update its status.
 | [0004](0004-financial-authority-boundaries.md) | Financial authority boundaries and AI prohibitions | Accepted | 2026-11-13 |
 | [0005](0005-tenant-isolation.md) | Tenant isolation without row-level security | Accepted | 2026-11-13 |
 | [0006](0006-idempotency-and-provenance.md) | Idempotent financial events with explicit provenance | Accepted | 2026-11-13 |
+| [0007](0007-cloudflare-runtime-verification.md) | Cloudflare runtime verification and pinned adapter | Accepted | 2026-11-13 |
+| [0008](0008-d1-persistence.md) | D1 persistence, migrations and transaction boundaries | Accepted | 2026-11-13 |
+| [0009](0009-authentication-and-sessions.md) | Authentication, sessions and credential handling | Accepted | 2026-11-13 |
+| [0010](0010-tenant-authorization.md) | Tenant context, roles and centralized authorization | Accepted | 2026-11-13 |
+| [0011](0011-audit-tamper-evidence.md) | Append-only, hash-chained audit log | Accepted | 2026-11-13 |
 
 ## Status values
 
