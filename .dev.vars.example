@@ -11,3 +11,14 @@ BETTER_AUTH_SECRET=development-only-replace-with-32-plus-random-characters
 
 # Public origin used for callback and CSRF origin checks in local development.
 BETTER_AUTH_URL=http://127.0.0.1:8787
+
+# Local development keeps unverified sign-in off so an account is usable without
+# a mail provider. Production defaults to REQUIRED unless set to "false"; a
+# production build without email credentials therefore fails closed.
+EMAIL_VERIFICATION_REQUIRED=false
+
+# Email delivery (Resend HTTP API). Leave blank locally; set as platform secret
+# bindings in preview/production. Without both values the mailer reports
+# "unconfigured" and sends nothing.
+# RESEND_API_KEY=
+# EMAIL_FROM=Hestian <no-reply@example.com>

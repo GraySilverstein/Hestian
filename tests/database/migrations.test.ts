@@ -26,9 +26,12 @@ describe("database schema", () => {
     const db = open();
     expect(tableNames(db)).toEqual([
       "audit_event",
+      "governance_data_export",
+      "governance_deletion_request",
       "identity_account",
       "identity_rate_limit",
       "identity_session",
+      "identity_two_factor",
       "identity_user",
       "identity_verification",
       "platform_rate_limit",
@@ -36,6 +39,22 @@ describe("database schema", () => {
       "tenancy_invitation",
       "tenancy_membership",
     ]);
+  });
+
+  it("adds two-factor state without breaking existing users", () => {
+    const db = open();
+    insertUser(db.raw, { id: "user_a", email: "a@example.com" });
+    const user = db.raw
+      .prepare("SELECT twoFactorEnabled FROM identity_user WHERE id = 'user_a'")
+      .get() as { twoFactorEnabled: number };
+    expect(user.twoFactorEnabled).toBe(0);
+
+    const columns = db.raw.prepare("PRAGMA table_info(identity_two_factor)").all() as {
+      name: string;
+    }[];
+    expect(columns.map((column) => column.name)).toEqual(
+      expect.arrayContaining(["userId", "secret", "backupCodes", "verified"]),
+    );
   });
 
   it("carries tenant ownership in every tenant-scoped table", () => {

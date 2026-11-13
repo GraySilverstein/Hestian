@@ -18,6 +18,11 @@ const AUDITED_AUTH_PATHS: Readonly<Record<string, string>> = {
   "/change-password": "identity.password_changed",
   "/revoke-session": "identity.session_revoked",
   "/revoke-sessions": "identity.sessions_revoked",
+  "/two-factor/enable": "identity.mfa_enrollment_started",
+  "/two-factor/disable": "identity.mfa_disabled",
+  "/two-factor/verify-totp": "identity.mfa_verified",
+  "/two-factor/verify-backup-code": "identity.mfa_recovery_used",
+  "/two-factor/generate-backup-codes": "identity.mfa_recovery_regenerated",
 };
 
 async function auditRequest(request: Request, response: Response): Promise<void> {

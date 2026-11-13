@@ -7,12 +7,23 @@ import { createAuth } from "@/modules/identity/auth-options";
  * Uses the same `buildAuthOptions` as production, so hashing parameters, session
  * lifetimes and rate-limit rules under test are the shipped ones.
  */
-export function createTestAuth(database: unknown) {
+export function createTestAuth(
+  database: unknown,
+  options: {
+    readonly mailer?: ReturnType<typeof createUnconfiguredMailer>;
+    readonly requireEmailVerification?: boolean;
+    readonly onPasswordReset?: (userId: string) => Promise<void>;
+  } = {},
+) {
   return createAuth({
     database,
     secret: "test-secret-with-at-least-32-characters",
     baseURL: "http://localhost:3000",
     isProduction: false,
-    mailer: createUnconfiguredMailer(),
+    mailer: options.mailer ?? createUnconfiguredMailer(),
+    requireEmailVerification: options.requireEmailVerification ?? false,
+    ...(options.onPasswordReset === undefined
+      ? {}
+      : { onPasswordReset: options.onPasswordReset }),
   });
 }

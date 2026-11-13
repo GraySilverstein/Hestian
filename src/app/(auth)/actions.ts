@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { DomainError } from "@/core/errors";
 import { recordAuditEvent } from "@/modules/audit";
-import { getAuth, getBindings, getSession } from "@/modules/identity";
+import { getAuth, getBindings, getSession, resendVerificationEmail } from "@/modules/identity";
 
 import { safeNextPath, type FormState } from "../form-state";
 
@@ -35,6 +35,8 @@ const resetSchema = z.object({
 const GENERIC_SIGN_IN_ERROR = "Invalid email or password.";
 const GENERIC_SIGN_UP_ERROR = "An account could not be created with those details.";
 const GENERIC_RESET_REQUEST = "If an account exists for that address, a reset link has been sent.";
+const GENERIC_VERIFICATION_REQUEST =
+  "If that address needs verification, a new link has been sent.";
 
 function fieldErrors(error: z.ZodError): Record<string, string> {
   const result: Record<string, string> = {};
@@ -126,16 +128,26 @@ export async function signInAction(
   const auth = await getAuth();
   const requestHeaders = await headers();
 
+  let twoFactorRequired = false;
   try {
-    await auth.api.signInEmail({
+    const result = await auth.api.signInEmail({
       body: { email: parsed.data.email, password: parsed.data.password },
       headers: requestHeaders,
     });
+
+    // A 2FA-enabled account gets a challenge cookie, not a session. The second
+    // factor must be completed before any protected route can be reached.
+    twoFactorRequired = "twoFactorRedirect" in result && result.twoFactorRedirect === true;
   } catch {
     // Deliberately identical for unknown accounts, wrong passwords and
     // unverified addresses to prevent account enumeration.
     await audit("identity.sign_in", "failure");
     return { status: "error", message: GENERIC_SIGN_IN_ERROR };
+  }
+
+  if (twoFactorRequired) {
+    await audit("identity.two_factor_challenged", "success");
+    redirect(`/two-factor?next=${encodeURIComponent(safeNextPath(parsed.data.next))}`);
   }
 
   const session = await getSession(requestHeaders);
@@ -172,6 +184,36 @@ export async function signOutEverywhereAction(): Promise<void> {
   }
 
   redirect("/sign-in");
+}
+
+export async function resendVerificationAction(
+  _previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = emailSchema.safeParse({
+    email: String(formData.get("email") ?? "").trim().toLowerCase(),
+  });
+
+  if (!parsed.success) {
+    return { status: "success", message: GENERIC_VERIFICATION_REQUEST };
+  }
+
+  const { DB, BETTER_AUTH_URL } = await getBindings();
+  const auth = await getAuth();
+  const baseURL = (BETTER_AUTH_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "");
+
+  const outcome = await resendVerificationEmail(
+    DB,
+    auth,
+    parsed.data.email,
+    `${baseURL}/workspace`,
+  );
+
+  await audit(
+    "identity.verification_resent",
+    outcome.rateLimited ? "denied" : "success",
+  );
+  return { status: "success", message: GENERIC_VERIFICATION_REQUEST };
 }
 
 export async function requestPasswordResetAction(

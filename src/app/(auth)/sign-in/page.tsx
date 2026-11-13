@@ -35,6 +35,8 @@ export default async function SignInPage({
       <p className="hint" style={{ marginTop: 24 }}>
         No account?{" "}
         <Link href={`/sign-up?next=${encodeURIComponent(next)}`}>Create one</Link>
+        {" · "}
+        <Link href="/verify-email">Resend verification email</Link>
       </p>
     </main>
   );

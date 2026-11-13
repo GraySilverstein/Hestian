@@ -38,4 +38,9 @@ export interface HestianBindings {
   readonly BETTER_AUTH_URL?: string;
   readonly EMAIL_FROM?: string;
   readonly RESEND_API_KEY?: string;
+  /**
+   * "true" forces email verification before sign-in. Production defaults to
+   * required unless this is explicitly "false"; development defaults to off.
+   */
+  readonly EMAIL_VERIFICATION_REQUIRED?: string;
 }

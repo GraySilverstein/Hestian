@@ -16,7 +16,10 @@ import { getMigrations } from "better-auth/db/migration";
 import { createAuth } from "../src/modules/identity/auth-options.ts";
 import { createUnconfiguredMailer } from "../src/modules/identity/email.ts";
 
-const OUTPUT = "migrations/0001_identity_authentication.sql";
+// Defaults to the original identity migration. Pass a path to generate into a
+// scratch file when diffing a configuration change before writing a new
+// migration (applied migrations are never rewritten).
+const OUTPUT = process.argv[2] ?? "migrations/0001_identity_authentication.sql";
 
 const db = new DatabaseSync(":memory:");
 const auth = createAuth({

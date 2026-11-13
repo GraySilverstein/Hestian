@@ -1,4 +1,4 @@
-import type { Database } from "@/config/bindings";
+import type { Database, DatabaseResult, DatabaseStatement } from "@/config/bindings";
 import { DomainError } from "@/core/errors";
 import { redactValue } from "@/core/logging/redact";
 
@@ -92,55 +92,16 @@ export async function recordAuditEvent(
   const safeMetadata = (redactValue(input.metadata ?? {}) ?? {}) as Record<string, unknown>;
 
   for (let attempt = 0; attempt < MAX_APPEND_ATTEMPTS; attempt += 1) {
-    const prevHash = await headHash(db);
-    const id = crypto.randomUUID();
-    const occurredAt = now().toISOString();
-
-    const base = {
-      id,
-      occurredAt,
-      actorUserId: input.actorUserId ?? null,
-      businessId: input.businessId ?? null,
-      action: input.action,
-      outcome: input.outcome,
-      targetType: input.targetType ?? null,
-      targetId: input.targetId ?? null,
-      correlationId: input.correlationId,
-      metadata: safeMetadata,
-      prevHash,
-    } satisfies Omit<AuditEventRecord, "hash" | "seq">;
-
-    const hash = await sha256Hex(material(base));
+    const prepared = await prepareAuditEvent(db, input, safeMetadata, now());
 
     try {
-      await db
-        .prepare(
-          `INSERT INTO audit_event
-            (id, occurred_at, actor_user_id, business_id, action, outcome,
-             target_type, target_id, correlation_id, metadata, prev_hash, hash)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .bind(
-          id,
-          occurredAt,
-          base.actorUserId,
-          base.businessId,
-          base.action,
-          input.outcome,
-          base.targetType,
-          base.targetId,
-          input.correlationId,
-          JSON.stringify(safeMetadata),
-          prevHash,
-          hash,
-        )
-        .run();
+      await prepared.statement.run();
 
       const inserted = await db
         .prepare("SELECT seq FROM audit_event WHERE id = ?")
         .first<{ seq: number }>();
 
-      return { ...base, seq: inserted?.seq ?? 0, hash };
+      return { ...prepared.event, seq: inserted?.seq ?? 0 };
     } catch (error) {
       // A unique `prev_hash` collision means another writer appended first.
       if (attempt === MAX_APPEND_ATTEMPTS - 1) {
@@ -157,6 +118,137 @@ export async function recordAuditEvent(
   throw new DomainError({
     code: "CONFLICT",
     message: "Audit chain is contended; the event was not recorded.",
+    details: { action: input.action },
+  });
+}
+
+interface PreparedAuditEvent {
+  readonly event: Omit<AuditEventRecord, "seq">;
+  readonly statement: DatabaseStatement;
+}
+
+/**
+ * Builds the audit row for the current chain head.
+ *
+ * Exported through `commitWithAudit` only: callers must not insert audit rows
+ * themselves, because a row built off a stale head breaks the chain.
+ */
+async function prepareAuditEvent(
+  db: Database,
+  input: AuditEventInput,
+  safeMetadata: Record<string, unknown>,
+  occurredAtDate: Date,
+): Promise<PreparedAuditEvent> {
+  const prevHash = await headHash(db);
+  const event = {
+    id: crypto.randomUUID(),
+    occurredAt: occurredAtDate.toISOString(),
+    actorUserId: input.actorUserId ?? null,
+    businessId: input.businessId ?? null,
+    action: input.action,
+    outcome: input.outcome,
+    targetType: input.targetType ?? null,
+    targetId: input.targetId ?? null,
+    correlationId: input.correlationId,
+    metadata: safeMetadata,
+    prevHash,
+  } satisfies Omit<AuditEventRecord, "hash" | "seq">;
+
+  const hash = await sha256Hex(material(event));
+
+  const statement = db
+    .prepare(
+      `INSERT INTO audit_event
+        (id, occurred_at, actor_user_id, business_id, action, outcome,
+         target_type, target_id, correlation_id, metadata, prev_hash, hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      event.id,
+      event.occurredAt,
+      event.actorUserId,
+      event.businessId,
+      event.action,
+      event.outcome,
+      event.targetType,
+      event.targetId,
+      event.correlationId,
+      JSON.stringify(safeMetadata),
+      prevHash,
+      hash,
+    );
+
+  return { event: { ...event, hash }, statement };
+}
+
+function isPrevHashConflict(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("audit_event.prev_hash");
+}
+
+export interface CommitWithAuditResult {
+  readonly results: readonly DatabaseResult[];
+  readonly event: AuditEventRecord;
+}
+
+/**
+ * Commits a business mutation and its audit event in one D1 batch.
+ *
+ * D1 documents `batch()` as a single SQL transaction: if any statement fails,
+ * the whole sequence is rolled back. The audit insert is therefore atomic with
+ * the mutation it describes, and a chain-head race rolls both back before the
+ * retry (the unique `prev_hash` is what makes the race visible).
+ *
+ * A failure that is not a chain-head conflict is rethrown, not retried: the
+ * mutation itself failed and no partial write survives.
+ */
+export async function commitWithAudit(
+  db: Database,
+  statements: readonly DatabaseStatement[],
+  input: AuditEventInput,
+  now: () => Date = () => new Date(),
+): Promise<CommitWithAuditResult> {
+  if (input.correlationId.trim() === "") {
+    throw new DomainError({
+      code: "INVALID_ARGUMENT",
+      message: "Audit events require a correlation id.",
+    });
+  }
+
+  if (statements.length === 0) {
+    throw new DomainError({
+      code: "INVALID_ARGUMENT",
+      message: "commitWithAudit requires at least one business statement.",
+    });
+  }
+
+  const safeMetadata = (redactValue(input.metadata ?? {}) ?? {}) as Record<string, unknown>;
+
+  for (let attempt = 0; attempt < MAX_APPEND_ATTEMPTS; attempt += 1) {
+    const prepared = await prepareAuditEvent(db, input, safeMetadata, now());
+
+    try {
+      const results = await db.batch([...statements, prepared.statement]);
+      const inserted = await db
+        .prepare("SELECT seq FROM audit_event WHERE id = ?")
+        .first<{ seq: number }>();
+      return { results, event: { ...prepared.event, seq: inserted?.seq ?? 0 } };
+    } catch (error) {
+      if (!isPrevHashConflict(error)) throw error;
+      if (attempt === MAX_APPEND_ATTEMPTS - 1) {
+        throw new DomainError({
+          code: "CONFLICT",
+          message: "Audit chain is contended; the operation was not applied.",
+          details: { action: input.action },
+          cause: error,
+        });
+      }
+    }
+  }
+
+  throw new DomainError({
+    code: "CONFLICT",
+    message: "Audit chain is contended; the operation was not applied.",
     details: { action: input.action },
   });
 }

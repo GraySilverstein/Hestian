@@ -10,6 +10,7 @@ export interface SessionUser {
   readonly email: string;
   readonly name: string;
   readonly emailVerified: boolean;
+  readonly twoFactorEnabled: boolean;
 }
 
 export interface ActiveSession {
@@ -37,6 +38,8 @@ export async function getSession(requestHeaders: Headers): Promise<Authenticated
       email: result.user.email,
       name: result.user.name,
       emailVerified: result.user.emailVerified,
+      twoFactorEnabled:
+        (result.user as { twoFactorEnabled?: boolean | null }).twoFactorEnabled === true,
     },
     session: {
       id: result.session.id,

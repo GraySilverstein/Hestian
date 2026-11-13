@@ -768,3 +768,34 @@ a:hover {
     text-align: left;
   }
 }
+
+/* Security settings and privacy surfaces */
+.codeBlock {
+  display: block;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+.bareList {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-family: var(--font-mono);
+  color: var(--ink-2);
+}
+
+.bareList code {
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}

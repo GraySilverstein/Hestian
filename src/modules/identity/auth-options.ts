@@ -1,4 +1,5 @@
 import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { twoFactor } from "better-auth/plugins/two-factor";
 
 import { attemptDelivery, type Mailer } from "./email";
 
@@ -13,6 +14,7 @@ export const AUTH_MODEL_NAMES = {
   account: "identity_account",
   verification: "identity_verification",
   rateLimit: "identity_rate_limit",
+  twoFactor: "identity_two_factor",
 } as const;
 
 export interface AuthConfig {
@@ -22,8 +24,19 @@ export interface AuthConfig {
   readonly baseURL: string;
   readonly isProduction: boolean;
   readonly mailer: Mailer;
+  /**
+   * When true, an unverified address cannot sign in. Production sets this unless
+   * explicitly disabled, so a missing mail provider fails closed rather than
+   * silently admitting unverified accounts.
+   */
+  readonly requireEmailVerification?: boolean;
+  /**
+   * Invoked after a successful password reset. Production revokes every session
+   * for the user so a stolen session cannot survive a credential change.
+   */
+  readonly onPasswordReset?: (userId: string) => Promise<void>;
   readonly onEmailOutcome?: (outcome: {
-    readonly kind: "verification" | "password_reset";
+    readonly kind: "verification" | "password_reset" | "security_notice";
     readonly delivered: boolean;
     readonly reason?: string;
   }) => void;
@@ -71,10 +84,13 @@ export function buildAuthOptions(config: AuthConfig): BetterAuthOptions {
       enabled: true,
       minPasswordLength: 12,
       maxPasswordLength: 128,
-      // Email delivery is not configured in this milestone. Requiring
-      // verification would lock every new account out, so it is off and the
-      // limitation is recorded in docs/SECURITY.md instead of simulated.
-      requireEmailVerification: false,
+      // Fail closed where verification is required: without a configured mailer
+      // a new account cannot verify, so it cannot sign in. Local development may
+      // opt out explicitly; production must not.
+      requireEmailVerification: config.requireEmailVerification ?? false,
+      onPasswordReset: async ({ user }) => {
+        await config.onPasswordReset?.(user.id);
+      },
       sendResetPassword: async ({ user, url }) => {
         const outcome = await attemptDelivery(config.mailer, {
           to: user.email,
@@ -141,7 +157,20 @@ export function buildAuthOptions(config: AuthConfig): BetterAuthOptions {
       },
     },
 
-    plugins: config.plugins ?? [],
+    plugins: [
+      twoFactor({
+        issuer: "Hestian",
+        twoFactorTable: AUTH_MODEL_NAMES.twoFactor,
+        // Backup codes are stored encrypted with the auth secret and consumed
+        // single-use by the provider; TOTP secrets are encrypted too.
+        backupCodeOptions: { amount: 10, length: 10, storeBackupCodes: "encrypted" },
+        // Account-level lockout complements the HTTP rate limit: server actions
+        // call the API directly, so the plugin must enforce its own limit.
+        accountLockout: { enabled: true, maxFailedAttempts: 10, durationSeconds: 900 },
+        twoFactorCookieMaxAge: 600,
+      }),
+      ...(config.plugins ?? []),
+    ],
   };
 }
 

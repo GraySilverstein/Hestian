@@ -59,12 +59,25 @@ export async function getAuth(): Promise<Auth> {
     resendApiKey: env.RESEND_API_KEY,
   });
 
+  // Fail closed: production requires verification unless explicitly disabled.
+  // A build without a mail provider therefore cannot silently admit unverified
+  // accounts; new users simply cannot complete sign-in until delivery exists.
+  const requireEmailVerification =
+    env.EMAIL_VERIFICATION_REQUIRED === "true" ||
+    (isProduction && env.EMAIL_VERIFICATION_REQUIRED !== "false");
+
   const auth = createAuth({
     database: env.DB,
     secret,
     baseURL,
     isProduction,
     mailer,
+    requireEmailVerification,
+    onPasswordReset: async (userId) => {
+      // A password reset invalidates every existing session: the credential that
+      // created them is no longer the credential the account has.
+      await env.DB.prepare("DELETE FROM identity_session WHERE userId = ?").bind(userId).run();
+    },
     onEmailOutcome: (outcome) => {
       // Never log the message body: it contains single-use tokens.
       logger.warn("identity.email_not_delivered", {
