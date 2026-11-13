@@ -11,6 +11,9 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+/** Every page is request-scoped: sessions and CSP nonces must be per request. */
+export const dynamic = "force-dynamic";
+
 export const viewport: Viewport = {
   colorScheme: "dark",
   themeColor: "#07080a",

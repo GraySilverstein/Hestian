@@ -32,6 +32,10 @@ export const ERROR_CODES = [
   "TENANT_BOUNDARY_VIOLATION",
   /** A documented accounting or module invariant was violated. */
   "INVARIANT_VIOLATION",
+  /** Request body exceeded the permitted size. */
+  "PAYLOAD_TOO_LARGE",
+  /** Too many attempts in the current window. */
+  "RATE_LIMITED",
   /** Unexpected internal failure. */
   "INTERNAL",
 ] as const;
@@ -52,6 +56,8 @@ const HTTP_STATUS_BY_CODE: Readonly<Record<ErrorCode, number>> = {
   CONFLICT: 409,
   TENANT_BOUNDARY_VIOLATION: 403,
   INVARIANT_VIOLATION: 409,
+  PAYLOAD_TOO_LARGE: 413,
+  RATE_LIMITED: 429,
   INTERNAL: 500,
 };
 

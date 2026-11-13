@@ -13,6 +13,7 @@ declare const identifierBrand: unique symbol;
 export type Brand<T, B extends string> = T & { readonly [identifierBrand]: B };
 
 export type TenantId = Brand<string, "TenantId">;
+export type BusinessId = Brand<string, "BusinessId">;
 export type UserId = Brand<string, "UserId">;
 export type AccountId = Brand<string, "AccountId">;
 export type JournalEntryId = Brand<string, "JournalEntryId">;
@@ -53,6 +54,10 @@ function parseIdentifier<T extends string>(raw: unknown, kind: string): Result<T
 
 export function parseTenantId(raw: unknown): Result<TenantId, DomainError> {
   return parseIdentifier<TenantId>(raw, "TenantId");
+}
+
+export function parseBusinessId(raw: unknown): Result<BusinessId, DomainError> {
+  return parseIdentifier<BusinessId>(raw, "BusinessId");
 }
 
 export function parseUserId(raw: unknown): Result<UserId, DomainError> {

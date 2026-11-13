@@ -41,3 +41,8 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # Proves the Cloudflare adapter can bundle the app. It does not exercise
+      # workerd; runtime checks run locally via `npm run verify:runtime`.
+      - name: Cloudflare Worker build
+        run: npm run build:worker

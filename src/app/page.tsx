@@ -1,3 +1,6 @@
+import Link from "next/link";
+
+import { getCurrentSession } from "@/modules/identity";
 import {
   MODULES,
   PRODUCT_PILLARS,
@@ -50,15 +53,26 @@ const DOCUMENTS: readonly string[] = [
   "decisions/",
 ];
 
-export default function FoundationPage() {
+export default async function FoundationPage() {
+  const session = await getCurrentSession();
   const byLayer = modulesByLayer();
-  const documentedCount = MODULES.filter((module) => module.status === "documented").length;
+  const inProgress = MODULES.filter((module) => module.status === "in-progress").length;
 
   return (
     <main className="shell">
       <header className="siteHeader">
         <span className="wordmark">Hestian</span>
-        <span className="headerMeta">Milestone 0 · Foundation</span>
+        <nav className="nav" aria-label="Account">
+          <span className="headerMeta">Milestone 1 · Security foundation</span>
+          {session === null ? (
+            <>
+              <Link href="/sign-in">Sign in</Link>
+              <Link href="/sign-up">Create account</Link>
+            </>
+          ) : (
+            <Link href="/workspace">Workspace</Link>
+          )}
+        </nav>
       </header>
 
       <section className="hero">
@@ -68,9 +82,9 @@ export default function FoundationPage() {
         </h1>
         <p className="lede">
           Hestian brings financial core, growth, operations and intelligence into one system for
-          independent creators and creator-led businesses. This deployment is the architectural
-          foundation: bounded contexts, financial authority boundaries and the rules that keep
-          analysis from ever touching the books.
+          independent creators and creator-led businesses. The foundation now includes real
+          authentication, tenant isolation and a tamper-evident audit trail. It still contains no
+          financial records and no AI.
         </p>
         <ul className="factRow">
           <li>
@@ -79,11 +93,11 @@ export default function FoundationPage() {
           </li>
           <li>
             <span className="factDot" aria-hidden="true" />
-            No financial data
+            Server-verified sessions
           </li>
           <li>
             <span className="factDot" aria-hidden="true" />
-            No authentication
+            No financial data
           </li>
           <li>
             <span className="factDot" aria-hidden="true" />
@@ -113,7 +127,7 @@ export default function FoundationPage() {
             Module foundation
           </h2>
           <p className="sectionNote">
-            {documentedCount} of {MODULES.length} documented
+            {inProgress} in progress · {MODULES.length} total
           </p>
         </div>
 
@@ -141,9 +155,8 @@ export default function FoundationPage() {
           What this deployment is not
         </h2>
         <p className="noticeIntro">
-          Nothing here is a simulated product. The following capabilities are deliberately absent
-          and will each be introduced by a reviewed milestone, with tests, before any of them is
-          described as working.
+          Every capability below is deliberately absent. Each will be introduced by a reviewed
+          milestone, with tests, before it is described as working.
         </p>
         <ul className="noticeList">
           <li>
@@ -152,7 +165,10 @@ export default function FoundationPage() {
           </li>
           <li>
             <span aria-hidden="true">—</span>
-            <span>No authentication, sessions or tenant records. Authorization is documented, not built.</span>
+            <span>
+              No email delivery for verification or password reset: tokens are issued, but no
+              provider is configured, so no message is sent.
+            </span>
           </li>
           <li>
             <span aria-hidden="true">—</span>
@@ -183,7 +199,7 @@ export default function FoundationPage() {
             ))}
           </ul>
         </div>
-        <span className="footerSignature">Foundation · not for production use</span>
+        <span className="footerSignature">Security foundation · not for production use</span>
       </footer>
     </main>
   );

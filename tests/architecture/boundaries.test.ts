@@ -129,12 +129,17 @@ describe("source boundaries", () => {
         const targetModule = moduleIdForPath(targetPath);
         if (targetModule === undefined) continue;
 
-        if (owner === undefined) {
+        const isCoreOrConfig =
+          filePath.startsWith("src/core/") || filePath.startsWith("src/config/");
+        if (isCoreOrConfig) {
           violations.push(
             `${filePath} imports ${specifier}: core and config must stay independent of modules`,
           );
           continue;
         }
+
+        // The app shell may compose modules; it has no dependency declaration.
+        if (owner === undefined) continue;
 
         if (!isImportAllowed(owner, targetModule)) {
           violations.push(

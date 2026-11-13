@@ -40,7 +40,7 @@ export default tseslint.config(
     rules: { "no-console": "off" },
   },
   {
-    files: ["tests/**/*.ts"],
+    files: ["tests/**/*.ts", "scripts/**/*.ts", "scripts/**/*.mjs"],
     rules: { "no-console": "off" },
   },
 );

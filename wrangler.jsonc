@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hestian",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  },
+  // Local development database. The `database_id` is a placeholder that the
+  // local D1 simulator accepts; real preview and production identifiers are
+  // supplied by the hosting platform and are never committed.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hestian-local",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "HESTIAN_ENV": "local"
+  }
+}
