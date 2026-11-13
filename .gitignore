@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+build/
+dist/
+next-env.d.ts
+*.tsbuildinfo
+
+# Cloudflare / Freebuff build artifacts (added when deployment work begins)
+.open-next/
+.wrangler/
+.vercel/
+
+# Local environment files. Never commit credentials.
+.env
+.env.*
+!.env.example
+
+# Test output
+coverage/
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+*.log
+
+# Freebuff workspace metadata
+.freebuff/
