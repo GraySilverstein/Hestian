@@ -19,6 +19,11 @@ supersedes the old one and update its status.
 | [0009](0009-authentication-and-sessions.md) | Authentication, sessions and credential handling | Accepted | 2026-11-13 |
 | [0010](0010-tenant-authorization.md) | Tenant context, roles and centralized authorization | Accepted | 2026-11-13 |
 | [0011](0011-audit-tamper-evidence.md) | Append-only, hash-chained audit log | Accepted | 2026-11-13 |
+| [0012](0012-email-verification-and-recovery.md) | Email verification, recovery and fail-closed delivery | Accepted (delivery blocked) | 2026-11-13 |
+| [0013](0013-multi-factor-authentication.md) | Multi-factor authentication with TOTP and recovery codes | Accepted | 2026-11-13 |
+| [0014](0014-export-and-deletion.md) | Personal data export and account deletion | Accepted | 2026-11-13 |
+| [0015](0015-audit-atomicity.md) | Audit atomicity: D1 batch commits, outbox rejected for now | Accepted | 2026-11-13 |
+| [0016](0016-dependency-supply-chain.md) | Dependency pins, overrides and supply-chain review | Accepted | 2026-11-13 |
 
 ## Status values
 

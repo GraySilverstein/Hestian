@@ -59,6 +59,31 @@ Delivered:
 Explicitly not delivered: email delivery, MFA, production deployment, remote D1,
 R2, any financial behaviour.
 
+### Milestone 1.5 — Security closure and financial readiness
+
+**Status: complete, awaiting review.**
+
+Delivered:
+
+- TOTP two-factor authentication with encrypted secrets, single-use recovery codes,
+  a fail-closed sign-in challenge, password-gated disablement, session revocation and
+  audit events (ADR 0013).
+- Provider-independent email port with a Resend adapter, fail-closed production
+  verification, single-use/expiring tokens, resend throttling, enumeration-safe
+  responses, and session revocation on password reset (ADR 0012). Delivery itself is
+  **blocked** until provider credentials exist.
+- Owner-scoped personal data export (one-hour, session-only download) and atomic
+  identity deletion with sole-owner blocking and anonymisation (ADR 0014).
+- `commitWithAudit`: mutation plus audit event in one D1 batch, failure-injection and
+  concurrency tests, and a written determination of D1 batch semantics (ADR 0015).
+- Dependency advisories traced, safely overridden and verified (`npm audit`: 0), with
+  a production SBOM and supply-chain procedure (ADR 0016).
+- 98 tests across 17 suites; 28/28 live workerd checks; financial readiness assessment
+  ([FINANCIAL_READINESS.md](FINANCIAL_READINESS.md)).
+
+Explicitly not delivered: real email delivery, ownership transfer/business closure,
+production deployment, remote D1, R2, any financial behaviour.
+
 ---
 
 ## 2. Proposed sequence
@@ -71,7 +96,7 @@ facts being trustworthy.
 
 ### Milestone 2 — Financial Integrity Core
 
-**Status: not started. Requires review approval.**
+**Status: not started. Requires review approval of Milestone 1.5.**
 
 Scope:
 

@@ -28,8 +28,10 @@ events without a cycle.
 | Export | Purpose |
 | --- | --- |
 | `recordAuditEvent(db, input)` | Appends one event, retrying on chain contention. |
+| `commitWithAudit(db, statements, input)` | Commits a business mutation and its audit event in one D1 batch. |
 | `verifyAuditChain(db)` | Recomputes hashes and linkage; reports the first break. |
-| `listAuditEvents(db, businessId, limit)` | Tenant-scoped read for future UI. |
+| `exportBusinessAuditEvents(db, businessId)` | Tenant-scoped export including chain fields. |
+| `listBusinessAuditEvents(db, businessId, limit)` | Most recent events for one business. |
 | `ACTIONS` | Fixed action names, so strings do not drift. |
 
 ## Invariants
@@ -43,11 +45,15 @@ events without a cycle.
 ## Limitations
 
 - Tamper-evident, not tamper-proof: database-owner access could rebuild the chain.
-- No external anchoring, retention policy, export or alerting.
-- Audited action and audit row are not atomic on D1; a crash between them is possible.
+- No external anchoring, retention policy or alerting.
+- `commitWithAudit` is atomic, but legacy tenancy server actions still append their
+  audit event separately (PARTIAL). Financial writes must use the atomic helper.
+- A batch cannot be aborted after a zero-row conditional update; financial state must
+  be enforced by constraints/triggers (see FINANCIAL_READINESS.md).
 - HTTP-level auth events may lack an actor id.
 
 ## Status
 
-Milestone 1: implemented and tested (linking, verification, tamper detection,
-triggers, redaction, concurrent appends); live workerd runs write events to D1.
+Milestone 1.5: implemented and tested (linking, verification, tamper detection,
+triggers, redaction, concurrent appends, batch atomicity, tenant-scoped export); live
+workerd runs write events to D1 through the same path.

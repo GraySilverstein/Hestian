@@ -1,9 +1,10 @@
 # Data governance
 
-Status: first tenant data is now stored (identity, businesses, memberships,
-invitations, audit). Financial records, documents and AI data do not exist. This
-document separates what is stored today from what is planned, and states the
-retention decisions that remain open.
+Status: identity, second factors, businesses, memberships, invitations, audit,
+data exports and deletion requests are stored. Financial records, documents and AI
+data do not exist. Email delivery is blocked on provider credentials. This document
+separates what is stored today from what is planned, and states the retention
+decisions that remain open.
 
 ---
 
@@ -32,6 +33,9 @@ moves money is Restricted.
 | Invitation email, role, token hash | Confidential / Restricted | `tenancy_invitation` | Token stored only as SHA-256; expires in 7 days |
 | Audit events | Internal, may contain Confidential references | `audit_event` | Metadata redacted; no emails, tokens or passwords |
 | Rate-limit counters | Internal | `identity_rate_limit`, `platform_rate_limit` | Keyed by hashed subject; no content |
+| TOTP secret, recovery codes | Restricted | `identity_two_factor` | Encrypted with the auth secret; never logged or returned after issuance |
+| Personal export payload | Confidential | `governance_data_export` | Profile, memberships, session timestamps; deleted with the user row, expired after 1 hour |
+| Deletion requests | Internal | `governance_deletion_request` | Status, blockers, timestamps; no credentials |
 
 Not stored: financial transactions, documents, payment details, tax identifiers,
 uploaded files, AI prompts or outputs.
@@ -87,8 +91,10 @@ Implemented today:
 | Sessions | 8 hours absolute; refresh extends activity within that window | Rows expire and are rejected on read; no cleanup job yet |
 | Invitations | 7 days, single use | Expired invitations remain rows until a cleanup policy exists |
 | Rate-limit counters | Window length (max 5 minutes) | Overwritten in place by key |
+| Personal exports | 1 hour from generation | Payload row remains until the user row is deleted; reads reject it after expiry |
+| Deletion requests | Indefinite | Records the workflow and blockers; no credentials |
 | Audit events | Indefinite | Append-only; retention period undecided |
-| Identity and tenancy records | Until deletion is implemented | No self-service account deletion exists |
+| Identity and tenancy records | Until the user requests deletion | Identity anonymised, membership removed; business records retained |
 
 Planned policy (periods to be confirmed with legal review before production):
 
@@ -116,9 +122,21 @@ contract. No retention claim should be made in product copy until decided.
   be offered as a tenant-facing "delete my data" control.
 - Legal hold suspends deletion for the affected tenant; the hold itself is
   audited.
-- Account deletion is **not implemented**. The authentication provider exposes a
-  deletion hook, but Hestian has no user-facing flow, no confirmation step, no
-  grace period and no export. This must be designed before launch.
+- Account deletion **is implemented for identity** (`/settings/privacy`). It
+  requires the current password, a recent session and a typed confirmation, then in
+  one atomic batch deletes credentials, sessions, second factors and memberships,
+  revokes pending invitations and anonymises the profile. Audit events and business
+  records are retained, and the anonymised user row preserves foreign keys. See ADR
+  0014.
+- Deletion is **blocked for a sole business owner**; ownership transfer and business
+  closure are not implemented, so the user must add another owner first.
+- There is **no grace period and no cancellation**, and no deletion email (delivery
+  blocked). The UI states that deletion is irreversible.
+- Integration credential revocation is a no-op because no credentials exist; it must
+  be added to the same workflow when integrations arrive.
+- Data export (`/settings/privacy`) covers the profile, memberships and session
+  timestamps, expires after one hour and is served only to the signed-in owner. It
+  excludes other users' data, tenant financial records and credentials.
 - Email addresses cannot currently be changed or removed by the user; a change
   would require re-verification, which depends on an email provider.
 
@@ -195,5 +213,6 @@ No AI feature, prompt or embedding exists in this milestone.
 5. Legal basis and consent model for any model-provider data sharing.
 6. Audit log retention and tenant-facing audit access.
 7. Encryption key management and rotation ownership.
-8. Account deletion, export and grace-period design.
-9. Cleanup jobs for expired sessions, invitations and rate-limit rows.
+8. Ownership transfer, business closure and a grace period for deletion.
+9. Cleanup jobs for expired sessions, invitations, exports and rate-limit rows.
+10. Legal review of retention periods; none is asserted today.

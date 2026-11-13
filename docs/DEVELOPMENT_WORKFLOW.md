@@ -48,6 +48,11 @@ files list names only.
 | `npm run db:migrate:remote` | Apply migrations to deployed D1 (requires auth) |
 | `npm run auth:schema` | Regenerate identity schema SQL from Better Auth |
 
+Email delivery uses `RESEND_API_KEY` and `EMAIL_FROM` as platform secret bindings;
+production requires verification unless `EMAIL_VERIFICATION_REQUIRED` is explicitly
+`"false"`. Never commit a provider key. `npm run sbom` regenerates the production
+dependency inventory after a dependency change.
+
 `npm run check` plus `npm run build` is the minimum before a commit that changes
 code. Changes to authentication, middleware, headers, routing, bindings or
 migrations additionally require `npm run build:worker`, a `start:worker` session
@@ -158,13 +163,29 @@ CI does not run workerd, so it cannot prove headers, cookies, D1 bindings or
 authentication behaviour end to end; `npm run verify:runtime` is the manual gate
 for those.
 
-## 10. Migrations
+## 10. Dependency review
+
+Any dependency change follows this procedure:
+
+1. Run `npm audit` and `npm audit --omit=dev`; record the result.
+2. Trace every finding with `npm ls <package>` and decide whether the affected code is
+   reachable from Worker request handling, build tooling, or tests.
+3. Prefer a compatible upgrade. Do not downgrade Next.js, OpenNext, Wrangler or Better
+   Auth to silence an advisory, and never run `npm audit fix --force` without an ADR.
+4. If an override is required, pin exact versions, rerun `npm run check`,
+   `npm run build:worker` and `npm run verify:runtime`, and record the risk in an ADR.
+5. Regenerate the SBOM (`npm run sbom`) and commit it with the change.
+6. An advisory is not dismissed because it is transitive; it is either fixed or
+   documented with a reachability argument and a remediation plan.
+
+## 11. Migrations
 
 - Migrations live in `migrations/` and are applied by the Wrangler D1 migrator.
   They are forward-only; never edit an applied migration.
-- Identity tables are generated from the authentication library configuration:
-  run `npm run auth:schema`, review the produced SQL, then add it as a new
-  numbered migration. Do not hand-edit provider tables.
+- Identity tables (including two-factor) are generated from the authentication
+  library configuration: run `npm run auth:schema` (optionally with a scratch output
+  path), review the produced SQL, then add it as a new numbered migration and account
+  for existing rows. Do not hand-edit provider tables.
 - Test locally against a fresh database, then against the existing local database
   to prove the migration applies to populated state.
 - Every tenant-scoped table must include `business_id`, its foreign key and the
@@ -173,7 +194,7 @@ for those.
 - Remote application (`npm run db:migrate:remote`) requires explicit authorization
   and a backup; no remote database exists yet.
 
-## 11. Deployment (planned)
+## 12. Deployment (planned)
 
 Not performed in this milestone. When it begins:
 
@@ -191,14 +212,14 @@ Not performed in this milestone. When it begins:
 Never deploy from a dirty working tree, and never publish a build that has not
 passed CI and the runtime checks.
 
-## 12. Rollback
+## 13. Rollback
 
 - Code: redeploy the last known-good commit; do not revert published migrations.
 - Data: restore from backup only as an explicit, audited incident action.
 - If a financial defect is found, prefer a correcting entry over a data edit, and
   record the incident and its resolution.
 
-## 13. Definition of done
+## 14. Definition of done
 
 A milestone is done when its behaviour is implemented, tested at the appropriate
 levels, documented with accurate status, committed and pushed, and its completion

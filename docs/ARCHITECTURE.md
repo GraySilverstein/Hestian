@@ -1,7 +1,8 @@
 # Architecture
 
-Status: Milestone 1. The runtime, persistence, authentication and tenancy
-foundations are implemented and verified; no financial behaviour exists. This
+Status: Milestone 1.5. The runtime, persistence, authentication (including TOTP),
+tenancy, audit, export and deletion foundations are implemented and verified; no
+financial behaviour exists. Email delivery is blocked on provider credentials. This
 document records the structure later milestones must respect; anything labelled
 *planned* does not exist yet.
 
@@ -140,8 +141,14 @@ realtime and managed sign-in. Constraints and consequences:
   responses.
 - Static assets are served by the Worker through the `ASSETS` binding.
 
-Still unverified: production deployment, remote D1, CPU/latency under load,
-R2, scheduled jobs, and behaviour at D1 size limits. No performance claim is made.
+Milestone 1.5 added: TOTP enrolment and challenge under workerd, fail-closed email
+verification, atomic mutation-plus-audit batches, owner-scoped export downloads and
+unauthenticated rejection of privacy routes. `wrangler dev` confirms D1 rolls back a
+failing batch.
+
+Still unverified: production deployment, remote D1, migration atomicity, backup and
+restore, D1 `bigint` binding, cross-batch isolation, CPU/latency under load, R2,
+scheduled jobs, and behaviour at D1 size limits. No performance claim is made.
 
 Decision record: [decisions/0002-runtime-and-deployment.md](decisions/0002-runtime-and-deployment.md).
 
@@ -188,8 +195,13 @@ Implemented persistence model (Milestone 1):
   UPDATE`. Correctness comes from foreign keys, `CHECK` constraints, unique
   indexes and conditional updates. `db.batch()` is atomic but does not roll back
   on constraint failure, so it is used only for independent writes.
-- Identity tables are owned by Better Auth's generated schema
-  (`scripts/generate-auth-schema.ts`); Hestian does not edit them by hand.
+- Identity tables (including `identity_two_factor`) are owned by Better Auth's
+  generated schema (`scripts/generate-auth-schema.ts`); Hestian changes them only by
+  generating a new migration and adding deliberate constraints.
+- Governance owns `governance_data_export` and `governance_deletion_request`. Export
+  payloads are D1 rows with a one-hour expiry, not objects in public storage.
+- Financial posting must use `commitWithAudit`, which commits the mutation and its
+  audit event in one D1 batch; no financial write may be unaudited.
 - Foreign keys and `CHECK` constraints are enabled by migration and exercised by
   `tests/database/migrations.test.ts` against real SQLite.
 - Two-tenant isolation is tested at the repository level; the tests use the real
@@ -226,6 +238,10 @@ provenance. Layer A never depends on B or C. See
 | Auth | Better Auth over D1; opaque DB sessions; immediate revocation | `src/modules/identity/` |
 | Tenant context | Derived from membership rows, never from client input | `src/modules/tenancy/repository.ts` |
 | Audit | Hash-chained append-only events with redacted metadata | `src/modules/audit/` |
+| Audit atomicity | Mutation + audit in one D1 batch; retry only on chain-head race | `commitWithAudit` in `src/modules/audit/audit-log.ts` |
+| Second factor | TOTP with encrypted secrets and single-use recovery codes | `src/modules/identity/auth-options.ts`, `src/app/settings/security/` |
+| Privacy workflows | Owner-scoped export (1h expiry) and atomic identity deletion | `src/modules/governance/privacy.ts`, `src/app/settings/privacy/` |
+| Email delivery | One port, Resend adapter, fail-closed verification in production | `src/modules/identity/email.ts`, ADR 0012 |
 
 ## 9. Observability
 
@@ -253,9 +269,14 @@ what keeps future financial code isolated. See
 | Core primitives (money, ids, result, errors, logging, config) | Implemented, tested |
 | HTTP security helpers, CSP, rate limiting | Implemented, tested |
 | Module registry + boundary gate | Implemented, tested |
-| Authentication and sessions | Implemented, tested (email delivery partial) |
+| Authentication and sessions | Implemented, tested |
+| Email verification and recovery | Implemented, tested; delivery **blocked** on provider |
+| MFA (TOTP + recovery codes) | Implemented, tested, runtime-verified |
 | Tenancy, roles, invitations, tenant isolation | Implemented, tested |
 | Audit trail (hash chain, append-only triggers) | Implemented, tested |
+| Audit atomicity | Implemented for new flows; legacy tenancy actions PARTIAL |
+| Data export and identity deletion | Implemented, tested (no ownership transfer) |
+| Dependency advisories | Resolved with tested overrides; SBOM generated |
 | Database schema and migrations | Implemented, tested locally |
 | Cloudflare Worker build and local workerd run | Implemented, verified |
 | Production deployment, remote D1, secrets bindings | Deferred, not authorized |

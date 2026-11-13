@@ -17,11 +17,12 @@ whose foundation must be reliable, auditable and secure.
 
 ---
 
-## Status: Milestone 1 — runtime, security foundation and tenancy
+## Status: Milestone 1.5 — security closure and financial readiness
 
-The application now runs as a verified Cloudflare Worker with a persistent D1
-database, real authentication, tenant-scoped authorization and a tamper-evident
-audit trail. It still contains **no financial records and no AI**.
+The application runs as a verified Cloudflare Worker with a persistent D1 database,
+real authentication (including TOTP), tenant-scoped authorization, a tamper-evident
+audit trail, personal-data export and identity deletion. It still contains **no
+financial records and no AI**.
 
 **Implemented and verified**
 
@@ -29,21 +30,29 @@ audit trail. It still contains **no financial records and no AI**.
   `wrangler dev` / workerd with real D1 bindings.
 - D1 schema and forward-only migrations: identity, tenancy, audit, rate limiting.
 - Email/password authentication with scrypt hashing, database-backed sessions,
-  revocation, password reset plumbing, and database-backed rate limiting.
+  revocation, password reset and database-backed rate limiting.
+- TOTP two-factor authentication with encrypted secrets and ten single-use recovery
+  codes; a password alone produces a challenge, never a session.
 - Tenants (businesses), memberships, five roles, a central permission gate,
   invitations with hashed single-use tokens, and a last-owner invariant.
+- Owner-scoped data export (one-hour expiry, session-only download) and atomic
+  identity deletion, blocked for a sole business owner.
+- Atomic mutation-plus-audit batches for consequential writes.
 - Security headers with a nonce-based CSP, same-origin enforcement, request size
   limits, generic error responses and automatic secret redaction in logs.
 - Append-only, hash-chained audit log with database triggers rejecting updates and
-  deletes.
-- 79 tests across 12 suites plus a 17-check runtime verification script.
+  deletes, tenant-scoped export, and chain verification.
+- 98 tests across 17 suites plus a 28-check runtime verification script.
+- Dependency advisories resolved with tested overrides and a production SBOM.
 
 **Not implemented (deliberately)**
 
 - Accounting engine, chart of accounts, journal, balances, invoices, payments.
-- Email delivery: verification and reset tokens are issued, but no provider is
-  configured, so no message is sent and accounts remain unverified.
-- MFA: the authentication provider supports it; Hestian does not enable it yet.
+- Email delivery: the Resend adapter and verification enforcement exist, but no
+  provider credentials are configured, so no message is sent. Production therefore
+  fails closed and new accounts cannot sign in until secrets are set.
+- Ownership transfer, business closure and a deletion grace period.
+- Production MFA policy (MFA is implemented; no tenant policy requires it yet).
 - Bank feeds, payment execution, tax filing, payroll, Shopify, social publishing.
 - AI features of any kind.
 - Production deployment: no remote D1 database, Worker version or secret binding
@@ -57,17 +66,20 @@ Every planned capability is marked as planned in [docs/ROADMAP.md](docs/ROADMAP.
 
 | Check | Result |
 | --- | --- |
-| `npm run check` (typecheck, lint, 79 tests) | pass |
+| `npm run check` (typecheck, lint, 98 tests) | pass |
 | `npm run build` (Next.js production build) | pass |
 | `npm run build:worker` (OpenNext → Worker bundle) | pass |
-| `wrangler dev` + `npm run verify:runtime` (17 checks) | pass |
-| Live sign-up → session → sign-out in workerd | pass |
+| `wrangler dev` + `npm run verify:runtime` (28 checks) | pass |
+| Live sign-up → TOTP enrolment → challenge → sign-out in workerd | pass |
+| `npm audit` / `npm audit --omit=dev` | 0 vulnerabilities |
 | Foreign-origin authentication request | rejected (4xx) |
 | Login rate limit after 5 attempts | 429 |
 | Password stored as scrypt hash, plaintext absent | confirmed via D1 query |
 
-Not verified: production deployment, email delivery, MFA, load/performance, and
-automated browser end-to-end flows.
+Not verified: production deployment, real email delivery, remote D1, backup/restore,
+load/performance, and automated browser end-to-end flows. See
+[docs/FINANCIAL_READINESS.md](docs/FINANCIAL_READINESS.md) before starting the
+financial core.
 
 ---
 
@@ -133,8 +145,9 @@ and [0008-d1-persistence.md](docs/decisions/0008-d1-persistence.md).
 │   ├── middleware.ts              # CSP nonce + security headers + body limit
 │   └── modules/
 │       ├── manifest.ts            # module registry and dependency rules
-│       ├── audit/                 # hash-chained append-only log
-│       ├── identity/              # Better Auth wiring, sessions, email port
+│       ├── audit/                 # hash-chained append-only log + atomic commits
+│       ├── governance/            # data export and account deletion
+│       ├── identity/              # Better Auth, sessions, TOTP, email port
 │       └── tenancy/               # businesses, memberships, roles, invitations
 ├── tests/                         # unit, security, database, architecture
 ├── open-next.config.ts
@@ -154,7 +167,8 @@ npm run check             # typecheck + lint + tests
 npm run build:worker      # OpenNext build → .open-next/worker.js
 npm run db:migrate:local  # apply migrations to local D1
 npm run start:worker      # wrangler dev on 127.0.0.1:8787
-npm run verify:runtime    # 17 live checks against that Worker
+npm run verify:runtime    # 28 live checks against that Worker
+npm run sbom              # regenerate docs/sbom.production.cdx.json
 
 npm run auth:schema       # regenerate identity schema after auth changes
 npm run db:migrate:remote # apply migrations to the deployed D1 (requires auth)
@@ -183,11 +197,12 @@ environment, and production values are platform secret bindings.
 | [docs/DOMAIN_MODEL.md](docs/DOMAIN_MODEL.md) | Ubiquitous language, aggregates, state machines. |
 | [docs/FINANCIAL_INTEGRITY.md](docs/FINANCIAL_INTEGRITY.md) | Numbered invariants and authority boundaries. |
 | [docs/SECURITY.md](docs/SECURITY.md) | Implemented controls, threat model, limitations. |
-| [docs/DATA_GOVERNANCE.md](docs/DATA_GOVERNANCE.md) | Classification, retention, AI data rules. |
+| [docs/DATA_GOVERNANCE.md](docs/DATA_GOVERNANCE.md) | Classification, retention, export/deletion, AI data rules. |
+| [docs/FINANCIAL_READINESS.md](docs/FINANCIAL_READINESS.md) | What the infrastructure can and cannot guarantee for the financial core. |
 | [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md) | Commit/push workflow, migrations, deployment. |
 | [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) | Suites, runtime verification, gaps. |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Milestones and explicitly deferred work. |
-| [docs/decisions/](docs/decisions/) | Architecture Decision Records 0001–0011. |
+| [docs/decisions/](docs/decisions/) | Architecture Decision Records 0001–0016. |
 
 Working on this repository: `main` is canonical; every meaningful change is
 committed and pushed with verification. See

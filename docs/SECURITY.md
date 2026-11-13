@@ -1,9 +1,9 @@
 # Security
 
-Status after Milestone 1. This document separates **implemented and tested**
-controls from **partial**, **planned** and **unverified** ones. It must not be
-read as a claim that Hestian is production-ready: no production deployment, email
-delivery, MFA or external security review exists.
+Status after Milestone 1.5. This document separates **implemented and tested**
+controls from **partial**, **planned**, **blocked** and **unverified** ones. It must
+not be read as a claim that Hestian is production-ready: there is no production
+deployment, no email provider account, and no external security review.
 
 ---
 
@@ -26,9 +26,14 @@ delivery, MFA or external security review exists.
 | Secrets kept out of the client | **implemented, tested** | config rejects `NEXT_PUBLIC_*` secret names; no secret in any `"use client"` module |
 | Audit trail | **implemented, tested** | hash chain verified; UPDATE/DELETE rejected by triggers |
 | Invitation tokens hashed at rest | **implemented, tested** | SHA-256 of 256-bit token, single-use, 7-day expiry |
-| Password reset | **partial** | tokens issued and consumed; email delivery unconfigured |
-| Email verification | **partial** | tokens issued on sign-up; no provider, accounts stay unverified |
-| MFA | **not implemented** | provider supports it; no schema or UI enabled |
+| Password reset | **implemented, tested; delivery BLOCKED** | single-use token, replay rejected, sessions revoked on reset; no provider credentials |
+| Email verification | **implemented, tested; delivery BLOCKED** | signed expiring token, fail-closed enforcement flag; no provider credentials |
+| MFA (TOTP + recovery codes) | **implemented, tested** | `tests/identity/mfa.test.ts`; live enrolment and challenge in workerd |
+| MFA disablement | **implemented, tested** | password + recent session; other sessions revoked |
+| Data export | **implemented, tested** | owner-scoped D1 payload, 1-hour expiry, authenticated download |
+| Account deletion | **partial (identity only)** | atomic identity deletion; ownership transfer/closure not implemented |
+| Audit atomicity | **implemented for new flows; partial overall** | `commitWithAudit` batch; legacy tenancy actions still two writes |
+| Dependency advisories | **resolved by tested overrides** | `npm audit` reports 0; `glob@14.0.3`, `minimatch@11.0.3`
 | Production secrets/rotation | **planned** | local `.dev.vars` only; no remote secret set |
 | Backup/restore rehearsal | **unverified** | no remote database exists |
 | Penetration test / external review | **none** | not performed |
@@ -77,8 +82,22 @@ delivery, MFA or external security review exists.
 outcome instead of pretending delivery. Because verification cannot be completed,
 `requireEmailVerification` is `false`; this must be revisited before production.
 
-**Not implemented:** MFA/TOTP, passkeys, OAuth providers, device management,
-password-breach checks.
+**Not implemented:** passkeys, OAuth providers, trusted-device cookies,
+password-breach checks, administrative MFA reset.
+
+**MFA:** TOTP with ten encrypted single-use recovery codes, enforced at sign-in (a
+password alone yields a challenge, never a session). Enrolment is two-step and
+requires the password; disabling requires the password plus a recent session and
+revokes other sessions. Secrets and recovery codes are encrypted with the auth
+secret, not hashed — see ADR 0013 for why, and for the residual risk. Account lockout
+(10 failures/15 minutes) and an IP rate limit cover brute force. No tenant policy
+requires MFA yet.
+
+**Email:** delivery is a single port with a Resend HTTP adapter. Production requires
+verification unless `EMAIL_VERIFICATION_REQUIRED=false`; without provider credentials
+the mailer reports `unconfigured` and new accounts cannot complete sign-in. That is
+fail-closed, not a working mail flow. Resend requests are throttled per address and
+return a uniform response, so the endpoint cannot enumerate accounts. See ADR 0012.
 
 ## 4. Authorization and tenancy
 
@@ -160,31 +179,57 @@ emits inline style attributes; scripts are the sensitive surface.
   audit their own operations. Actor attribution for HTTP-level auth events is not
   available (the response does not carry the user id).
 
+**Atomicity:** new consequential writes use `commitWithAudit`, which sends the
+mutation and the audit insert in one D1 `batch()` transaction and retries only on a
+chain-head race. Tests prove a failing mutation leaves neither row. Tenancy server
+actions written in Milestone 1 still append their audit event separately; they are
+**PARTIAL** until retrofitted. `batch()` cannot be aborted from JavaScript, so a
+zero-row conditional update is not an error — the financial core must enforce state
+with constraints/triggers (see [FINANCIAL_READINESS.md](FINANCIAL_READINESS.md)).
+
 **Limitations:** the chain is tamper-evident, not externally anchored (no
-notarisation or off-platform copy). Audit and the audited change are not written in
-one D1 transaction, so a crash between them can leave a change without its event;
-this is documented rather than hidden. Retention is undecided.
+notarisation or off-platform copy). Database-owner access could rebuild it. Retention
+is undecided. A tenant-scoped audit export (`/api/audit/export`) exposes the chain
+fields to roles with `audit.read`, and reports whether the chain currently verifies.
+
+**Privacy workflows:** exports are stored in D1 for one hour and served only to the
+owning session; there is no public object link. Deletion removes credentials,
+sessions, second factors, memberships and pending invitations and anonymises the
+profile in one batch, but blocks a sole owner. Business records and audit events are
+retained; no statutory retention period is asserted (ADR 0014).
 
 ## 9. Known gaps and vulnerabilities
 
-1. **Email verification cannot complete** without a provider; accounts are
-   unverified. A production launch must either configure delivery and enable
-   verification, or explicitly accept unverified accounts.
-2. **No MFA**, despite privileged financial roles being planned.
-3. **No production deployment**, so TLS, HSTS at the edge, secret binding,
-   remote D1 isolation, and rebuild-from-scratch have not been exercised.
-4. **No penetration test**, threat-model review with an external party, or
-   dependency review beyond `npm audit`.
-5. **Rate limiting is per key** with a fixed window; distributed abuse across keys
-   is only partly mitigated. No CAPTCHA or bot detection.
-6. **Session expiry is not covered by an automated test**; it relies on Better
-   Auth's enforcement and the stored `expiresAt`.
-7. **No CSRF token**, no CSP violation reporting, no WAF rules.
-8. **No audit retention/export or key rotation procedure.**
-9. **No malware scanning** for uploads because uploads do not exist yet; the
-   architecture for R2 documents must include scanning before launch.
-10. **SSRF surface is currently zero** (no user-supplied URLs are fetched); this
-    must be revisited with integrations.
+1. **Email delivery is blocked** on provider credentials and a verified sender
+   domain. Verification/reset code paths and enforcement are tested, but no real
+   message has been sent, and SPF/DKIM/DMARC are unconfigured. Production without
+   those secrets fails closed (new accounts cannot sign in).
+2. **Deletion is identity deletion only.** Ownership transfer, business closure,
+   integration-credential revocation (none exist yet), a grace period, and fixed
+   retention periods are missing.
+3. **No production deployment**, so TLS, HSTS at the edge, secret binding, remote D1,
+   isolation, and rebuild-from-scratch have not been exercised.
+4. **No penetration test or external review.** Dependency review is `npm audit` plus
+   an SBOM; it is not provenance verification.
+5. **Rate limiting is per key** with a fixed window; distributed abuse across keys is
+   only partly mitigated. No CAPTCHA or bot detection.
+6. **Session expiry is not covered by an automated test**; it relies on Better Auth's
+   enforcement and the stored `expiresAt`.
+7. **No CSRF token**, no CSP violation reporting, no WAF rules. SameSite cookies plus
+   origin checks are the current control.
+8. **No audit retention policy or key rotation procedure.** Audit export exists; there
+   is no alerting on chain verification failure.
+9. **Legacy tenancy audits remain two writes** (PARTIAL); a crash can leave an action
+   unaudited. New flows use the atomic helper.
+10. **TOTP replay inside the same time step is accepted** (standard TOTP); there is no
+    per-code replay cache.
+11. **No malware scanning** for uploads because uploads do not exist yet; R2 document
+    handling must include scanning before launch.
+12. **SSRF surface is currently zero** (no user-supplied URLs are fetched); revisit
+    with integrations.
+13. **`glob` is overridden to 14.0.3 ahead of OpenNext's declared range** to clear a
+    DoS advisory. Build and runtime pass, but the override must be revisited on every
+    OpenNext upgrade (ADR 0016).
 
 ## 10. Review checklist
 
