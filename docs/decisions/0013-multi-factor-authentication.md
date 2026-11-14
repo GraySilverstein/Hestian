@@ -49,7 +49,7 @@ without a complete challenge path.
 a session for password-only sign-in, wrong-code rejection, successful challenge,
 recovery-code single use, encrypted storage, password-gated disable, and factor
 removal. `scripts/verify-runtime.mjs` repeats enrolment, confirmation and challenge
-inside workerd (28/28 checks).
+inside workerd (29/29 checks).
 
 ## Consequences
 

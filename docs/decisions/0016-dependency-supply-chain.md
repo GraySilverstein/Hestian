@@ -39,7 +39,7 @@ because they are transitive.
 
 - Before: 3 moderate production, 11 moderate dev. After overrides: `found 0
   vulnerabilities` for both `npm audit` and `npm audit --omit=dev`.
-- `npm run check` (98 tests), `npm run build:worker` and the 28-check runtime script
+- `npm run check` (115 tests), `npm run build:worker` and the 29-check runtime script
   pass with the overrides.
 - `npm ls glob minimatch` shows a single deduped `minimatch@11.0.3`.
 

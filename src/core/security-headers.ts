@@ -9,13 +9,52 @@
 export interface SecurityHeaderOptions {
   readonly nonce: string;
   readonly isHttps: boolean;
-  readonly isProduction?: boolean;
+  /**
+   * Defaults to production. Development must be requested explicitly, so a
+   * missing or unrecognised environment can only produce the strict policy.
+   */
+  readonly mode?: SecurityMode;
 }
 
-export function contentSecurityPolicy(nonce: string): string {
+export type SecurityMode = "development" | "production";
+
+/**
+ * Chooses the policy mode from build-time environment values.
+ *
+ * Development is only selected when Next.js itself is running in development
+ * *and* the deployment is not labelled preview or production. A production
+ * build always sets `NODE_ENV=production`, but the explicit HESTIAN_ENV guard
+ * means a preview deployment that happens to run a dev server still cannot serve
+ * the development policy.
+ */
+export function resolveSecurityMode(environment: {
+  readonly nodeEnv?: string | undefined;
+  readonly hestianEnv?: string | undefined;
+}): SecurityMode {
+  const isLocal =
+    environment.hestianEnv === undefined ||
+    environment.hestianEnv === "" ||
+    environment.hestianEnv === "local";
+  return environment.nodeEnv === "development" && isLocal ? "development" : "production";
+}
+
+export function contentSecurityPolicy(
+  nonce: string,
+  mode: SecurityMode = "production",
+): string {
+  // Turbopack's React development runtime reconstructs callstacks with eval().
+  // That capability is development-only and never appears in the production
+  // policy; scripts remain nonce-bound and strict-dynamic in both modes.
+  const scriptSources = [
+    "'self'",
+    `'nonce-${nonce}'`,
+    "'strict-dynamic'",
+    ...(mode === "development" ? ["'unsafe-eval'"] : []),
+  ].join(" ");
+
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    `script-src ${scriptSources}`,
     // React emits inline style attributes; scripts are the sensitive surface.
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
@@ -32,8 +71,9 @@ export function contentSecurityPolicy(nonce: string): string {
 }
 
 export function securityHeaders(options: SecurityHeaderOptions): Record<string, string> {
+  const mode = options.mode ?? "production";
   const headers: Record<string, string> = {
-    "content-security-policy": contentSecurityPolicy(options.nonce),
+    "content-security-policy": contentSecurityPolicy(options.nonce, mode),
     "x-content-type-options": "nosniff",
     "referrer-policy": "strict-origin-when-cross-origin",
     "x-frame-options": "DENY",

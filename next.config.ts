@@ -14,6 +14,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // The local preview may be reached as 127.0.0.1 rather than localhost. Next
+  // blocks cross-origin dev resources (including HMR) by default; this allowlist
+  // applies only to the development server.
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   // The Worker build has no filesystem build cache to read at runtime.
   outputFileTracingRoot: process.cwd(),
 };

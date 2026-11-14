@@ -7,7 +7,11 @@ import {
   isSameOrigin,
   parseJsonBody,
 } from "@/core/http";
-import { contentSecurityPolicy, securityHeaders } from "@/core/security-headers";
+import {
+  contentSecurityPolicy,
+  resolveSecurityMode,
+  securityHeaders,
+} from "@/core/security-headers";
 
 const schema = z.object({ name: z.string().min(2), count: z.number().int().nonnegative() });
 
@@ -118,6 +122,44 @@ describe("security headers", () => {
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
+  });
+
+  it("permits eval only in the development policy", () => {
+    const development = contentSecurityPolicy("nonce-value", "development");
+    expect(development).toMatch(/script-src[^;]*\bunsafe-eval\b/);
+    expect(development).toContain("'nonce-nonce-value'");
+    expect(development).toContain("'strict-dynamic'");
+    expect(development).toContain("frame-ancestors 'none'");
+    expect(development).not.toMatch(/script-src[^;]*unsafe-inline/);
+
+    const production = contentSecurityPolicy("nonce-value", "production");
+    expect(production).not.toContain("unsafe-eval");
+    expect(contentSecurityPolicy("nonce-value")).not.toContain("unsafe-eval");
+  });
+
+  it("defaults to the production policy when no mode is supplied", () => {
+    const headers = securityHeaders({ nonce: "n", isHttps: true });
+    expect(headers["content-security-policy"]).not.toContain("unsafe-eval");
+    expect(headers["content-security-policy"]).toContain("'nonce-n'");
+  });
+
+  it("cannot select the development policy in preview or production", () => {
+    expect(resolveSecurityMode({ nodeEnv: "development", hestianEnv: "local" })).toBe(
+      "development",
+    );
+    expect(resolveSecurityMode({ nodeEnv: "production", hestianEnv: "production" })).toBe(
+      "production",
+    );
+    expect(resolveSecurityMode({ nodeEnv: "production", hestianEnv: "local" })).toBe(
+      "production",
+    );
+    expect(resolveSecurityMode({ nodeEnv: "development", hestianEnv: "preview" })).toBe(
+      "production",
+    );
+    expect(resolveSecurityMode({ nodeEnv: "development", hestianEnv: "production" })).toBe(
+      "production",
+    );
+    expect(resolveSecurityMode({})).toBe("production");
   });
 
   it("sets the core header set and only sends HSTS over HTTPS", () => {

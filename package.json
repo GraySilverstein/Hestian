@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "next dev",
+    "predev": "node scripts/ensure-dev-vars.mjs",
     "build": "next build",
     "build:worker": "opennextjs-cloudflare build",
     "preview:worker": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
@@ -25,6 +26,7 @@
     "check": "npm run typecheck && npm run lint && npm run test",
     "check:boundaries": "vitest run tests/architecture",
     "verify:runtime": "node scripts/verify-runtime.mjs",
+    "verify:dev": "node scripts/verify-dev-preview.mjs",
     "auth:schema": "tsx scripts/generate-auth-schema.ts",
     "sbom": "npm sbom --omit=dev --sbom-format=cyclonedx > docs/sbom.production.cdx.json"
   },

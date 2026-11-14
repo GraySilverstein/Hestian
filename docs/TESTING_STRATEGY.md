@@ -1,8 +1,8 @@
 # Testing strategy
 
-Status: 98 tests across 17 suites plus a 28-check runtime verification script
-(Milestone 1.5). Financial invariants, real-D1 concurrency, migration/restore and
-end-to-end browser tests remain planned.
+Status: 115 tests across 19 suites, a 29-check Worker runtime script and a 31-check
+development-preview script. Financial invariants, real-D1 concurrency,
+migration/restore and end-to-end browser tests remain planned.
 
 ---
 
@@ -51,14 +51,16 @@ Priority order:
 | `tests/core/logging.test.ts` | 6 | structured events, level filtering, redaction at depth, child isolation, bounded payloads |
 | `tests/core/rate-limit.test.ts` | 4 | allowance then block, window reset, key independence, `RATE_LIMITED` |
 | `tests/config/env.test.ts` | 4 | defaults, invalid values without echo, `NEXT_PUBLIC_*` rejection, memoisation |
+| `tests/config/dev-vars.test.ts` | 3 | random dev secret creation, idempotence, refusal to overwrite a short secret |
 | `tests/architecture/boundaries.test.ts` | 8 | registry, acyclic graph, layer direction, financial-core minimality, real imports |
 | `tests/database/migrations.test.ts` | 6 | empty-database migration, two-factor columns, tenant columns, invalid rows, triggers, duplicate invitation |
 | `tests/identity/authentication.test.ts` | 5 | sign-up, scrypt hash, wrong password, session read, sign-out |
+| `tests/identity/auth-runtime.test.ts` | 11 | secret fail-closed, no production fallback, dev loopback origin, mode selection |
 | `tests/identity/email-verification.test.ts` | 5 | fail-closed verification, replay, expired JWT, reset single-use, session revocation, enumeration, resend throttle |
 | `tests/identity/mfa.test.ts` | 4 | enrolment, password-only refusal, challenge, recovery single-use, encrypted codes, disable, other-session revocation |
 | `tests/security/authorization.test.ts` | 7 | full role matrix, unknown role denial, no role leakage |
 | `tests/security/tenant-isolation.test.ts` | 7 | forged ids, cross-tenant listing/mutation, invitation binding, escalation, last owner |
-| `tests/security/http.test.ts` | 10 | body limits, JSON parsing, origin enforcement, safe redirects, CSP nonce |
+| `tests/security/http.test.ts` | 13 | body limits, JSON parsing, origin enforcement, CSP nonce, dev/prod policy separation |
 | `tests/audit/audit-chain.test.ts` | 6 | chain links, verification, tamper detection, triggers, redaction, concurrency |
 | `tests/audit/atomicity.test.ts` | 4 | batch commit, rollback on failure, concurrent audited writes, tamper detection |
 | `tests/audit/export.test.ts` | 1 | tenant-scoped export with chain fields |
@@ -91,14 +93,14 @@ analytical module — even before any financial code exists.
 ## 4. Runtime verification
 
 `npm run verify:runtime` (after `npm run build:worker` and
-`npm run start:worker`) checks a live workerd instance (28 checks):
+`npm run start:worker`) checks a live workerd instance (29 checks):
 
 1. health endpoint and D1 binding;
 2. authentication configured;
 3. unauthenticated `/workspace` and `/settings/security` redirects;
 4. export download and audit export require a session;
 5. sign-up, `HttpOnly` and `SameSite=Lax` cookie;
-6. CSP nonce, no inline scripts, `frame-ancestors 'none'`, nosniff;
+6. CSP nonce, no inline scripts, no `unsafe-eval`, `frame-ancestors 'none'`, nosniff;
 7. session resolves and `/workspace` renders;
 8. TOTP enrolment returns a URI and ten recovery codes;
 9. TOTP confirmation succeeds and the session survives rotation;
@@ -108,8 +110,15 @@ analytical module — even before any financial code exists.
 13. foreign-origin authentication is rejected;
 14. oversized requests return 413.
 
-Last run: 28/28 against `http://127.0.0.1:8787`. This is the check a unit test cannot
+Last run: 29/29 against `http://127.0.0.1:8787`. This is the check a unit test cannot
 replace: it proves the adapter, workerd, D1, cookies and provider plugins agree.
+
+`npm run verify:dev` checks the actual Next.js dev server (31 checks): `/api/health`,
+`/`, `/sign-in`, an unauthenticated redirect and a 404 all carry a nonce-bearing
+development CSP with `unsafe-eval`; `connect-src` is not widened; Better Auth accepts
+the loopback preview origin; and the local secret is absent from served HTML and
+client chunks. It is not a production check: the Worker script proves the deployed
+policy has no `unsafe-eval`.
 
 ## 5. Conventions
 

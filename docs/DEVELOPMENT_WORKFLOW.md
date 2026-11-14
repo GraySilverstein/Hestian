@@ -20,15 +20,26 @@ This workflow is mandatory. The repository is the canonical source of truth and
 ```bash
 npm ci
 cp .env.example .env.local
-cp .dev.vars.example .dev.vars  # set BETTER_AUTH_SECRET to 32+ random chars
+npm run dev                     # creates .dev.vars with a random dev secret
+
+# Worker runtime instead of the Next.js dev server:
 npm run db:migrate:local
 npm run start:worker            # http://127.0.0.1:8787
 ```
 
 `.dev.vars` is git-ignored and read by Wrangler as local Worker bindings; Next.js
-`dev` reads the same variables through `getCloudflareContext`. Never commit
-`.dev.vars`, `.env`, `.env.local` or any file containing credentials. Example
-files list names only.
+`dev` reads the same variables through `getCloudflareContext`. `npm run dev` runs
+`scripts/ensure-dev-vars.mjs` first: it creates the file from the committed example
+if absent and replaces only the placeholder with a cryptographically random
+development secret. An existing valid secret is never overwritten, and the value is
+never printed. Restart the dev server after editing the file: `.dev.vars` is read
+once at startup. Never commit `.dev.vars`, `.env`, `.env.local` or any file
+containing credentials; example files list names only.
+
+The Next.js dev server derives its Better Auth origin from the loopback request, so
+a preview on a different port still passes origin checks. The Worker keeps using
+`BETTER_AUTH_URL` (8787 by default). Production reads `BETTER_AUTH_SECRET` only
+from the platform binding and fails closed when it is missing or short.
 
 ## 2. Commands
 
@@ -43,7 +54,8 @@ files list names only.
 | `npm run check` | typecheck + lint + test |
 | `npm run build:worker` | OpenNext build → `.open-next/worker.js` |
 | `npm run start:worker` | `wrangler dev` on 127.0.0.1:8787 |
-| `npm run verify:runtime` | 17 live HTTP checks against that Worker |
+| `npm run verify:runtime` | 29 live HTTP checks against that Worker |
+| `npm run verify:dev` | 31 checks against a running Next.js dev preview |
 | `npm run db:migrate:local` | Apply migrations to local D1 |
 | `npm run db:migrate:remote` | Apply migrations to deployed D1 (requires auth) |
 | `npm run auth:schema` | Regenerate identity schema SQL from Better Auth |

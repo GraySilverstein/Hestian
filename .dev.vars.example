@@ -1,15 +1,22 @@
-# Local Worker development variables for `wrangler dev` / `opennextjs-cloudflare preview`.
+# Local development variables for `next dev`, `wrangler dev` and
+# `opennextjs-cloudflare preview`.
 #
-# Copy to `.dev.vars` (git-ignored) and replace every placeholder. No real
-# credential is ever committed; production values are supplied as platform
-# secret bindings.
+# `npm run dev` creates this file automatically from this example if it is
+# missing, replacing only the placeholder with a random development secret.
+# The file is git-ignored and no real credential is ever committed; production
+# values are supplied as platform secret bindings.
+#
+# Values are read when the dev server starts. Restart it after editing them.
 NEXTJS_ENV=development
 
 # 32+ character secret used to sign sessions and tokens. Generate locally with:
 #   node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 BETTER_AUTH_SECRET=development-only-replace-with-32-plus-random-characters
 
-# Public origin used for callback and CSRF origin checks in local development.
+# Public origin used for callback and CSRF origin checks by the local Worker.
+# `next dev` derives a loopback origin from the actual request instead, so a
+# preview assigned a different port does not fail CSRF checks. Non-loopback
+# origins are ignored, and production always uses the configured binding.
 BETTER_AUTH_URL=http://127.0.0.1:8787
 
 # Local development keeps unverified sign-in off so an account is usable without

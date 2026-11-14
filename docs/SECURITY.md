@@ -141,6 +141,12 @@ of duties for payments (no payments exist), and background-job authorization
 - CSP: `default-src 'self'`; scripts require a per-request nonce with
   `strict-dynamic`; no `unsafe-inline` for scripts; `object-src 'none'`;
   `frame-ancestors 'none'`; `base-uri 'self'`; `form-action 'self'`.
+- The only development exception is `'unsafe-eval'`, required by React/Turbopack's
+  development runtime. It is selected only when `NODE_ENV=development` **and**
+  `HESTIAN_ENV` is unset/`local`; preview and production labels force the strict
+  policy even if a dev server is used. Production never contains `unsafe-eval`
+  (asserted by tests and the live Worker check). Nonce, `strict-dynamic`,
+  `frame-ancestors 'none'` and all other headers are identical in both modes.
 - `X-Content-Type-Options: nosniff`, `Referrer-Policy:
   strict-origin-when-cross-origin`, `X-Frame-Options: DENY`,
   `Permissions-Policy` disabling camera/microphone/geolocation/payment/usb,
@@ -154,11 +160,17 @@ emits inline style attributes; scripts are the sensitive surface.
 ## 7. Secrets
 
 - Local: `.dev.vars` (git-ignored) with a random 32+ character
-  `BETTER_AUTH_SECRET`; `.dev.vars.example` documents names only.
+  `BETTER_AUTH_SECRET`; `npm run dev` creates it from `.dev.vars.example` when
+  absent and never prints the value. `.dev.vars.example` documents names only.
 - Production: platform secret bindings (`BETTER_AUTH_SECRET`, `RESEND_API_KEY`,
-  `EMAIL_FROM`, `BETTER_AUTH_URL`). Nothing is committed.
+  `EMAIL_FROM`, `BETTER_AUTH_URL`). Nothing is committed. Production ignores
+  ambient process values for the signing secret: only the platform binding is
+  accepted, so a development credential cannot become a production fallback.
 - `getAuth()` fails closed when the secret is shorter than 32 characters or the
   base URL is missing/invalid.
+- `next dev` derives a loopback origin (localhost/127.0.0.1/::1, any port) from the
+  request so a preview on an assigned port passes Better Auth origin checks; a
+  non-loopback Host header is ignored. The Worker always uses `BETTER_AUTH_URL`.
 - Logs redact keys matching secret/token/password/authorization patterns; audit
   metadata is redacted before hashing.
 - No key rotation, envelope encryption or KMS integration exists yet: integration

@@ -137,6 +137,7 @@ check(
 const csp = signUp.headers.get("content-security-policy") ?? "";
 check("CSP carries a nonce", /'nonce-[^']+'/.test(csp));
 check("CSP blocks inline scripts", !/script-src[^;]*'unsafe-inline'/.test(csp));
+check("production CSP forbids eval", !/script-src[^;]*'unsafe-eval'/.test(csp));
 check("CSP forbids framing", csp.includes("frame-ancestors 'none'"));
 check("nosniff is set", signUp.headers.get("x-content-type-options") === "nosniff");
 

@@ -78,7 +78,8 @@ Delivered:
   concurrency tests, and a written determination of D1 batch semantics (ADR 0015).
 - Dependency advisories traced, safely overridden and verified (`npm audit`: 0), with
   a production SBOM and supply-chain procedure (ADR 0016).
-- 98 tests across 17 suites; 28/28 live workerd checks; financial readiness assessment
+- 115 tests across 19 suites; 29/29 live workerd checks plus 31 dev-preview checks;
+  financial readiness assessment
   ([FINANCIAL_READINESS.md](FINANCIAL_READINESS.md)).
 
 Explicitly not delivered: real email delivery, ownership transfer/business closure,

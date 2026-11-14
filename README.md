@@ -42,7 +42,8 @@ financial records and no AI**.
   limits, generic error responses and automatic secret redaction in logs.
 - Append-only, hash-chained audit log with database triggers rejecting updates and
   deletes, tenant-scoped export, and chain verification.
-- 98 tests across 17 suites plus a 28-check runtime verification script.
+- 115 tests across 19 suites, a 29-check Worker runtime script and a 31-check
+  development-preview script.
 - Dependency advisories resolved with tested overrides and a production SBOM.
 
 **Not implemented (deliberately)**
@@ -66,10 +67,11 @@ Every planned capability is marked as planned in [docs/ROADMAP.md](docs/ROADMAP.
 
 | Check | Result |
 | --- | --- |
-| `npm run check` (typecheck, lint, 98 tests) | pass |
+| `npm run check` (typecheck, lint, 115 tests) | pass |
 | `npm run build` (Next.js production build) | pass |
 | `npm run build:worker` (OpenNext → Worker bundle) | pass |
-| `wrangler dev` + `npm run verify:runtime` (28 checks) | pass |
+| `wrangler dev` + `npm run verify:runtime` (29 checks) | pass |
+| Next.js dev + `npm run verify:dev` (31 checks) | pass |
 | Live sign-up → TOTP enrolment → challenge → sign-out in workerd | pass |
 | `npm audit` / `npm audit --omit=dev` | 0 vulnerabilities |
 | Foreign-origin authentication request | rejected (4xx) |
@@ -167,7 +169,8 @@ npm run check             # typecheck + lint + tests
 npm run build:worker      # OpenNext build → .open-next/worker.js
 npm run db:migrate:local  # apply migrations to local D1
 npm run start:worker      # wrangler dev on 127.0.0.1:8787
-npm run verify:runtime    # 28 live checks against that Worker
+npm run verify:runtime    # 29 live checks against that Worker
+npm run verify:dev        # 31 checks against the Next.js dev preview
 npm run sbom              # regenerate docs/sbom.production.cdx.json
 
 npm run auth:schema       # regenerate identity schema after auth changes
@@ -179,13 +182,16 @@ Local setup:
 
 ```bash
 cp .env.example .env.local
-cp .dev.vars.example .dev.vars   # replace BETTER_AUTH_SECRET with 32+ random chars
+npm run dev                      # creates .dev.vars with a random dev secret on first run
+
+# Worker runtime instead of the Next.js dev server:
 npm run db:migrate:local
 npm run start:worker
 ```
 
-No secret is committed. `.dev.vars` is git-ignored and ignored by ESLint's
-environment, and production values are platform secret bindings.
+No secret is committed. `.dev.vars` is git-ignored; `npm run dev` creates it from
+`.dev.vars.example` with a random 32+ character `BETTER_AUTH_SECRET` when needed.
+Production values are platform secret bindings and never read from a local file.
 
 ---
 

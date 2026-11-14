@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { securityHeaders } from "@/core/security-headers";
+import { resolveSecurityMode, securityHeaders } from "@/core/security-headers";
 
 /**
  * Edge middleware: security headers, nonce-based CSP and a coarse body limit.
@@ -27,9 +27,14 @@ export function middleware(request: NextRequest): NextResponse {
   }
 
   const nonce = createNonce();
+  const mode = resolveSecurityMode({
+    nodeEnv: process.env.NODE_ENV,
+    hestianEnv: process.env.HESTIAN_ENV,
+  });
   const headers = securityHeaders({
     nonce,
     isHttps: request.nextUrl.protocol === "https:",
+    mode,
   });
 
   const requestHeaders = new Headers(request.headers);
