@@ -1,7 +1,7 @@
 # Hestian
 
-A business operating system for independent content creators, creator-led
-businesses and small digital brands.
+A business operating system for independent creators, creator-led businesses and
+small and medium businesses.
 
 Hestian unifies four capabilities on one reliable foundation:
 
@@ -17,12 +17,14 @@ whose foundation must be reliable, auditable and secure.
 
 ---
 
-## Status: Milestone 1.5 — security closure and financial readiness
+## Status: Milestone 2 — canonical domain model (design)
 
-The application runs as a verified Cloudflare Worker with a persistent D1 database,
-real authentication (including TOTP), tenant-scoped authorization, a tamper-evident
-audit trail, personal-data export and identity deletion. It still contains **no
-financial records and no AI**.
+The runtime is a verified Cloudflare Worker with a persistent D1 database, real
+authentication (including TOTP), tenant-scoped authorization, a tamper-evident audit
+trail, personal-data export and identity deletion. Milestone 2 adds the canonical
+business/financial domain, accounting invariants, payment/reconciliation model and
+D1 schema **as design documents only**. It still contains **no financial records and
+no AI**.
 
 **Implemented and verified**
 
@@ -42,6 +44,9 @@ financial records and no AI**.
   limits, generic error responses and automatic secret redaction in logs.
 - Append-only, hash-chained audit log with database triggers rejecting updates and
   deletes, tenant-scoped export, and chain verification.
+- Canonical domain and financial model, 34 accounting invariants, payment/settlement
+  lifecycle, evidence/reconciliation model and proposed D1 schema (documentation
+  only; no tables or posting code).
 - 115 tests across 19 suites, a 29-check Worker runtime script and a 31-check
   development-preview script.
 - Dependency advisories resolved with tested overrides and a production SBOM.
@@ -73,13 +78,15 @@ Every planned capability is marked as planned in [docs/ROADMAP.md](docs/ROADMAP.
 | `wrangler dev` + `npm run verify:runtime` (29 checks) | pass |
 | Next.js dev + `npm run verify:dev` (31 checks) | pass |
 | Live sign-up → TOTP enrolment → challenge → sign-out in workerd | pass |
+| Browser registration → MFA enrolment → challenge → recovery → revocation | pass (email enforcement not browser-tested) |
 | `npm audit` / `npm audit --omit=dev` | 0 vulnerabilities |
 | Foreign-origin authentication request | rejected (4xx) |
 | Login rate limit after 5 attempts | 429 |
 | Password stored as scrypt hash, plaintext absent | confirmed via D1 query |
 
 Not verified: production deployment, real email delivery, remote D1, backup/restore,
-load/performance, and automated browser end-to-end flows. See
+load/performance, and browser email-verification enforcement (local flag off, no
+provider). The browser authentication flow is verified as described above. See
 [docs/FINANCIAL_READINESS.md](docs/FINANCIAL_READINESS.md) before starting the
 financial core.
 
@@ -200,15 +207,22 @@ Production values are platform secret bindings and never read from a local file.
 | Document | Purpose |
 | --- | --- |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, module rules, runtime constraints, request lifecycle. |
-| [docs/DOMAIN_MODEL.md](docs/DOMAIN_MODEL.md) | Ubiquitous language, aggregates, state machines. |
-| [docs/FINANCIAL_INTEGRITY.md](docs/FINANCIAL_INTEGRITY.md) | Numbered invariants and authority boundaries. |
+| [docs/CANONICAL_DOMAIN_MODEL.md](docs/CANONICAL_DOMAIN_MODEL.md) | Businesses, legal entities, workspaces, parties and capabilities. |
+| [docs/FINANCIAL_DOMAIN_MODEL.md](docs/FINANCIAL_DOMAIN_MODEL.md) | Accounts, journal, documents, payments and revenue. |
+| [docs/ACCOUNTING_INVARIANTS.md](docs/ACCOUNTING_INVARIANTS.md) | FI-01…FI-34, enforcement and required tests. |
+| [docs/PAYMENT_AND_SETTLEMENT_LIFECYCLE.md](docs/PAYMENT_AND_SETTLEMENT_LIFECYCLE.md) | Capture, allocation, settlement, refunds and chargebacks. |
+| [docs/FINANCIAL_EVIDENCE_AND_RECONCILIATION.md](docs/FINANCIAL_EVIDENCE_AND_RECONCILIATION.md) | Evidence, authority and reconciliation boundaries. |
+| [docs/D1_FINANCIAL_SCHEMA_DESIGN.md](docs/D1_FINANCIAL_SCHEMA_DESIGN.md) | Proposed tables, triggers and concurrency constraints. |
+| [docs/CREATOR_AND_SME_WORKSPACE_MODEL.md](docs/CREATOR_AND_SME_WORKSPACE_MODEL.md) | One ledger, two segments, capability profiles. |
+| [docs/DOMAIN_MODEL.md](docs/DOMAIN_MODEL.md) | Milestone 1 sketch, retained for history. |
+| [docs/FINANCIAL_INTEGRITY.md](docs/FINANCIAL_INTEGRITY.md) | Original invariant narrative and authority boundaries. |
 | [docs/SECURITY.md](docs/SECURITY.md) | Implemented controls, threat model, limitations. |
 | [docs/DATA_GOVERNANCE.md](docs/DATA_GOVERNANCE.md) | Classification, retention, export/deletion, AI data rules. |
 | [docs/FINANCIAL_READINESS.md](docs/FINANCIAL_READINESS.md) | What the infrastructure can and cannot guarantee for the financial core. |
 | [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md) | Commit/push workflow, migrations, deployment. |
 | [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) | Suites, runtime verification, gaps. |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Milestones and explicitly deferred work. |
-| [docs/decisions/](docs/decisions/) | Architecture Decision Records 0001–0016. |
+| [docs/decisions/](docs/decisions/) | Architecture Decision Records 0001–0023. |
 
 Working on this repository: `main` is canonical; every meaningful change is
 committed and pushed with verification. See

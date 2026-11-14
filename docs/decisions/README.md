@@ -24,6 +24,13 @@ supersedes the old one and update its status.
 | [0014](0014-export-and-deletion.md) | Personal data export and account deletion | Accepted | 2026-11-13 |
 | [0015](0015-audit-atomicity.md) | Audit atomicity: D1 batch commits, outbox rejected for now | Accepted | 2026-11-13 |
 | [0016](0016-dependency-supply-chain.md) | Dependency pins, overrides and supply-chain review | Accepted | 2026-11-13 |
+| [0017](0017-business-legal-entity-and-workspace.md) | Business, legal entity and workspace are distinct | Accepted (design) | 2026-11-14 |
+| [0018](0018-immutable-double-entry-journal.md) | Immutable double-entry journal with controlled periods | Accepted (design) | 2026-11-14 |
+| [0019](0019-payment-capture-settlement-separation.md) | Separate capture, payment, allocation and settlement | Accepted (design) | 2026-11-14 |
+| [0020](0020-evidence-authority-and-advisory-reconciliation.md) | Evidence is not authority; reconciliation is advisory until reviewed | Accepted (design) | 2026-11-14 |
+| [0021](0021-d1-financial-schema-and-trigger-enforcement.md) | D1 financial schema: batch, triggers and idempotency | Accepted (design) | 2026-11-14 |
+| [0022](0022-ai-advisory-boundary.md) | AI is advisory only; provider-independent gateway | Accepted (design) | 2026-11-14 |
+| [0023](0023-shared-creator-sme-capability-model.md) | One ledger with creator/SME capability profiles | Accepted (design) | 2026-11-14 |
 
 ## Status values
 

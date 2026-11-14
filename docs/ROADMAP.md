@@ -85,6 +85,33 @@ Delivered:
 Explicitly not delivered: real email delivery, ownership transfer/business closure,
 production deployment, remote D1, R2, any financial behaviour.
 
+### Milestone 2 — Canonical business and financial domain model
+
+**Status: design complete, awaiting review. No runtime code or financial table was
+added.**
+
+Delivered:
+
+- [CANONICAL_DOMAIN_MODEL.md](CANONICAL_DOMAIN_MODEL.md): business, legal entity,
+  workspace, membership, parties, capabilities and operational entities, with
+  ownership/classification matrices.
+- [FINANCIAL_DOMAIN_MODEL.md](FINANCIAL_DOMAIN_MODEL.md): chart of accounts,
+  journal, periods, invoices, bills, payments, settlements, revenue sources and
+  creator/SME mappings.
+- [ACCOUNTING_INVARIANTS.md](ACCOUNTING_INVARIANTS.md): FI-01…FI-34 with enforcement
+  locations, failure behaviour and required tests.
+- [PAYMENT_AND_SETTLEMENT_LIFECYCLE.md](PAYMENT_AND_SETTLEMENT_LIFECYCLE.md) and
+  [FINANCIAL_EVIDENCE_AND_RECONCILIATION.md](FINANCIAL_EVIDENCE_AND_RECONCILIATION.md):
+  capture/settlement separation and evidence/authority/reconciliation rules.
+- [D1_FINANCIAL_SCHEMA_DESIGN.md](D1_FINANCIAL_SCHEMA_DESIGN.md): proposed tables,
+  triggers, idempotency, concurrency and migration constraints.
+- [CREATOR_AND_SME_WORKSPACE_MODEL.md](CREATOR_AND_SME_WORKSPACE_MODEL.md) and ADRs
+  0017–0023.
+
+No financial behaviour, provider integration or AI gateway was delivered. Browser
+authentication acceptance was attempted; its result and limitations are recorded in
+the Milestone 2 completion report.
+
 ---
 
 ## 2. Proposed sequence
@@ -95,19 +122,20 @@ authority can be built next behind real boundaries. Evidence and reconciliation
 depend on the posting model. Growth, commerce and intelligence depend on financial
 facts being trustworthy.
 
-### Milestone 2 — Financial Integrity Core
+### Milestone 2 implementation — Financial Integrity Core
 
-**Status: not started. Requires review approval of Milestone 1.5.**
+**Status: not started. Requires review approval of the Milestone 2 design.**
 
 Scope:
 
 - D1 schema and forward-only migrations for chart of accounts, fiscal periods,
   financial events, journal entries and lines.
-- Deterministic posting gate implementing FI-01…FI-22.
+- Deterministic posting gate implementing FI-01…FI-34.
 - Reversal and adjustment flow; immutability of posted entries.
 - Idempotency with unique constraints and replay semantics.
 - Provenance links from entry to evidence or adjustment justification.
-- Explicit transaction-boundary design for multi-write invariants on D1.
+- Implementation of the designed batch/trigger schema for multi-write invariants
+  on D1.
 - Integration tests against the real schema: constraints, two-tenant isolation,
   duplicate delivery, and invariant violations.
 

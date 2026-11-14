@@ -6,8 +6,8 @@ Milestones 1 and 1.5 can support the Financial Integrity Core without compromisi
 accounting correctness. It does not redesign the database, and it does not
 recommend replacing D1 without evidence.
 
-Date: 2026-11-13. Basis: Cloudflare D1, Workers, the `commitWithAudit` path, the
-test adapter and 96 passing tests.
+Date: 2026-11-13; Milestone 2 outcome added 2026-11-14. Basis: Cloudflare D1,
+Workers, the `commitWithAudit` path, the test adapter and 115 passing tests.
 
 ---
 
@@ -23,6 +23,10 @@ test adapter and 96 passing tests.
 | Is tenant isolation safe under concurrency? | **Application-enforced**; no RLS. Schema composite keys help, but isolation depends on every query carrying `business_id`. |
 | Does anything block starting the financial core? | **No blocker to design/build.** Three items block *production ledger use* until proven: posting concurrency, migration/restore safety, and audit coverage of every financial write. |
 | Should Hestian switch to PostgreSQL now? | **No.** The constraints are workable; a migration would add cost and a network dependency without evidence that D1 cannot meet the invariants. Revisit only if the posting prototype fails. |
+
+Milestone 2 resolved the **design** question: see
+[D1_FINANCIAL_SCHEMA_DESIGN.md](D1_FINANCIAL_SCHEMA_DESIGN.md) and ADR 0021. It did
+not implement or prove the schema. The unverified items below remain unverified.
 
 ---
 
@@ -199,3 +203,16 @@ with PostgreSQL is not evidence.
 - D1 row/database limits at the time of implementation.
 - Per-business posting serialisation (batch vs Durable Object).
 - Audit retention and external anchoring before financial data exists.
+
+## 7. Milestone 2 design outcome
+
+The canonical business/financial model, invariant catalogue, payment/settlement
+lifecycle, evidence/reconciliation model and proposed D1 schema are complete as
+design documents. The chosen posting shape is an append-only entry + lines in one
+batch, finalized by a trigger and audited in the same batch. This removes the
+lost-update class of defect, but it is **not implemented and not concurrency-tested**.
+
+Three gates before production ledger use are unchanged: a real workerd posting and
+allocation concurrency harness, migration/restore rehearsal on populated data, and
+audit coverage of every financial write. D1 `bigint` binding and migration atomicity
+remain unprobed. Do not read this design as evidence that D1 is sufficient at load.

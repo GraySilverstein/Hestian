@@ -120,6 +120,27 @@ the loopback preview origin; and the local secret is absent from served HTML and
 client chunks. It is not a production check: the Worker script proves the deployed
 policy has no `unsafe-eval`.
 
+### Browser acceptance (Milestone 2)
+
+Run against the real Next.js development server on `127.0.0.1:3100` with disposable
+data:
+
+- registration succeeded and reached `/workspace`;
+- TOTP enrolment displayed the setup key and ten recovery codes; confirmation
+  succeeded and the session was revoked, requiring a fresh sign-in;
+- invalid password showed a generic error; a password-only sign-in reached the MFA
+  challenge and created no session;
+- an invalid TOTP code was rejected; a recovery code completed the challenge once;
+- sign-out everywhere revoked the session; a fresh password + TOTP challenge
+  completed sign-in;
+- browser console contained no application errors and network requests succeeded.
+
+**Not exercised in the browser:** email-verification enforcement. The local preview
+sets `EMAIL_VERIFICATION_REQUIRED=false` because no mail provider is configured, so
+enforcement can only be tested through the provider configuration/tests. Production
+fail-closed behaviour is covered by `tests/identity/email-verification.test.ts` and
+the Worker runtime check, not by a delivered email.
+
 ## 5. Conventions
 
 - **Deterministic only.** No network, no real clock, no randomness except the

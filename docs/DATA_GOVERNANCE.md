@@ -2,7 +2,9 @@
 
 Status: identity, second factors, businesses, memberships, invitations, audit,
 data exports and deletion requests are stored. Financial records, documents and AI
-data do not exist. Email delivery is blocked on provider credentials. This document
+data do not exist. Milestone 2 defines proposed entity classifications and AI rules
+in [CANONICAL_DOMAIN_MODEL.md](CANONICAL_DOMAIN_MODEL.md) and ADR 0022; no new data
+is stored. Email delivery is blocked on provider credentials. This document
 separates what is stored today from what is planned, and states the retention
 decisions that remain open.
 
@@ -14,11 +16,17 @@ decisions that remain open.
 | --- | --- | --- |
 | **Public** | product marketing copy, documentation | no restriction |
 | **Internal** | module structure, non-tenant operational metrics | staff only |
-| **Confidential** | tenant financial records, invoices, counterparties, project costs, campaign performance, business names, membership lists | tenant-scoped access, no cross-tenant aggregation without explicit contract |
-| **Restricted** | provider credentials, session tokens, password hashes, invitation tokens, encryption keys, bank account numbers, tax identifiers | encrypted or hashed, never logged, never returned to the browser, access audited |
+| **Confidential** | invoices, credit notes, bills, counterparties, agreements, project costs, campaign performance, business names, membership lists | tenant-scoped access, no cross-tenant aggregation without explicit contract |
+| **Restricted** | provider credentials, session tokens, password hashes, invitation tokens, encryption keys, bank account numbers, tax identifiers, journal entries/lines, payments, settlements, evidence payloads | encrypted or hashed, never logged, never returned to the browser, access audited |
 
-Financial records are Confidential by default. Anything that authenticates or
-moves money is Restricted.
+Accounting-authority records (journal, payments, settlements, evidence) are
+Restricted. Commercial documents and counterparties are Confidential by default.
+Anything that authenticates, moves money or proves a posting is Restricted.
+
+The Milestone 2 tenant ownership/classification matrix in
+[CANONICAL_DOMAIN_MODEL.md §6](CANONICAL_DOMAIN_MODEL.md) covers proposed parties,
+agreements, invoices, payments, journal entries and evidence. Those rows are
+designs, not stored data.
 
 ### Data stored today
 
@@ -170,6 +178,13 @@ Rules for when intelligence work begins:
    operation in the owning module.
 
 No AI feature, prompt or embedding exists in this milestone.
+
+Milestone 2 fixes the boundary: AI is advisory Layer C only and is reached through
+a provider-independent gateway (initial target OpenRouter/LFM3-1.7B, ₹0 budget). It
+cannot query D1 directly, create/post journal entries, change balances, authorize
+reconciliation, execute payments or bypass tenant authorization. Financial data
+requires explicit tenant consent and provider-policy review before transmission;
+free inference does not imply that processing is lawful or safe. See ADR 0022.
 
 ## 9. Fixtures and test data
 

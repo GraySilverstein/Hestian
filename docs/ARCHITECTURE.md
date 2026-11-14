@@ -1,17 +1,26 @@
 # Architecture
 
-Status: Milestone 1.5. The runtime, persistence, authentication (including TOTP),
-tenancy, audit, export and deletion foundations are implemented and verified; no
-financial behaviour exists. Email delivery is blocked on provider credentials. This
-document records the structure later milestones must respect; anything labelled
-*planned* does not exist yet.
+Status: Milestone 2. The runtime, persistence, authentication (including TOTP),
+tenancy, audit, export and deletion foundations are implemented and verified.
+Milestone 2 adds the canonical business/financial domain, accounting invariants and
+D1 schema design as **documentation only**; no financial behaviour exists. Email
+delivery is blocked on provider credentials. This document records the structure
+later milestones must respect; anything labelled *planned* does not exist yet.
+
+Milestone 2 reading order: [CANONICAL_DOMAIN_MODEL.md](CANONICAL_DOMAIN_MODEL.md) →
+[FINANCIAL_DOMAIN_MODEL.md](FINANCIAL_DOMAIN_MODEL.md) →
+[ACCOUNTING_INVARIANTS.md](ACCOUNTING_INVARIANTS.md) →
+[D1_FINANCIAL_SCHEMA_DESIGN.md](D1_FINANCIAL_SCHEMA_DESIGN.md). Payment and
+reconciliation detail: [PAYMENT_AND_SETTLEMENT_LIFECYCLE.md](PAYMENT_AND_SETTLEMENT_LIFECYCLE.md),
+[FINANCIAL_EVIDENCE_AND_RECONCILIATION.md](FINANCIAL_EVIDENCE_AND_RECONCILIATION.md).
 
 ---
 
 ## 1. Context and forces
 
-Hestian is a financial operating system for one-operator and small-team
-creator businesses. The forces that shaped this architecture:
+Hestian is a financial operating system for independent creators, creator-led
+businesses and small and medium businesses. The forces that shaped this
+architecture:
 
 1. **Correctness outranks features.** A wrong balance destroys trust permanently.
    Financial code must be deterministic, auditable and independent of AI.
@@ -193,8 +202,9 @@ Implemented persistence model (Milestone 1):
   clause, so a guessed row id in another tenant matches nothing.
 - D1 has no row-level security, no interactive transactions and no `SELECT … FOR
   UPDATE`. Correctness comes from foreign keys, `CHECK` constraints, unique
-  indexes and conditional updates. `db.batch()` is atomic but does not roll back
-  on constraint failure, so it is used only for independent writes.
+  indexes, triggers and idempotency keys. `db.batch()` is atomic and rolls the
+  sequence back on failure, but a zero-row conditional `UPDATE` is not an error;
+  financial finalization therefore uses a trigger-backed finalize step (ADR 0021).
 - Identity tables (including `identity_two_factor`) are owned by Better Auth's
   generated schema (`scripts/generate-auth-schema.ts`); Hestian changes them only by
   generating a new migration and adding deliberate constraints.
@@ -217,7 +227,10 @@ Implemented persistence model (Milestone 1):
 
 Layer C may read A and B. It may not write either. Layer B may read A as
 provenance. Layer A never depends on B or C. See
-[FINANCIAL_INTEGRITY.md](FINANCIAL_INTEGRITY.md) for the invariant list.
+[FINANCIAL_INTEGRITY.md](FINANCIAL_INTEGRITY.md) and
+[ACCOUNTING_INVARIANTS.md](ACCOUNTING_INVARIANTS.md) for the invariant list, and
+[FINANCIAL_EVIDENCE_AND_RECONCILIATION.md](FINANCIAL_EVIDENCE_AND_RECONCILIATION.md)
+for the evidence-to-authority path.
 
 ## 8. Cross-cutting conventions
 
@@ -248,8 +261,8 @@ provenance. Layer A never depends on B or C. See
 - Structured logs with stable event names (`<module>.<action>`, for example
   `financial-core.entry.posted`), correlation id per request, tenant id where
   applicable, and no secrets.
-- Audit events (planned) are the durable record of consequential actions; logs
-  are operational and may be sampled or dropped.
+- Audit events are the durable record of consequential actions; logs are
+  operational and may be sampled or dropped.
 - Errors carry a domain code. Stack traces are logged, never returned.
 - Metrics/tracing: deferred. Platform analytics must not become a source of
   tenant data.
@@ -280,17 +293,19 @@ what keeps future financial code isolated. See
 | Database schema and migrations | Implemented, tested locally |
 | Cloudflare Worker build and local workerd run | Implemented, verified |
 | Production deployment, remote D1, secrets bindings | Deferred, not authorized |
-| Accounting engine | Planned |
-| Reconciliation | Planned |
+| Canonical business/financial domain | Designed and documented; not implemented |
+| Accounting engine | Planned (invariants and D1 schema designed) |
+| Reconciliation | Planned (lifecycle and evidence model designed) |
 | Growth / commerce / intelligence | Planned |
 
 ## 12. Open architectural questions
 
-1. **Transaction strategy on D1.** Milestone 1 established the constraint (no
-   interactive transactions; `batch()` is atomic but does not roll back on
-   constraint failure) and avoided multi-write invariants. The financial core
-   must decide how posting, balances and audit stay consistent; see
-   [decisions/0008-d1-persistence.md](decisions/0008-d1-persistence.md).
+1. **Transaction strategy on D1.** Resolved for design in
+   [D1_FINANCIAL_SCHEMA_DESIGN.md](D1_FINANCIAL_SCHEMA_DESIGN.md) and ADR 0021:
+   one atomic batch, a trigger-backed finalization step, append-only entries and
+   derived balances. `batch()` rolls back on failure, but a zero-row conditional
+   update does not; no financial transition may rely on a post-batch JavaScript
+   check. Concurrency remains unverified until a workerd harness exists.
 2. **Document storage.** R2 object keys, encryption, and retention for invoice
    evidence. Not started.
 3. **Period control granularity.** Calendar month only, or tenant-defined

@@ -1,7 +1,20 @@
 # 0008 — D1 persistence, migrations and transaction boundaries
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by ADR 0015 and ADR 0021
 - **Date:** 2026-11-13
+
+> **Correction (2026-11-14):** item 4 below states that `batch()` does not roll back
+> on constraint failure. That is not current D1 behaviour and is not the basis of the
+> implemented audit path. Cloudflare documents `batch()` as a transaction that rolls
+> back the sequence on failure; ADR 0015 and the failure-injection tests rely on that.
+> The correct durable constraint is narrower: a zero-row conditional `UPDATE` is not
+> an error and cannot abort a batch from JavaScript. See
+> [0021](0021-d1-financial-schema-and-trigger-enforcement.md) and
+> [D1_FINANCIAL_SCHEMA_DESIGN.md](../D1_FINANCIAL_SCHEMA_DESIGN.md). The original
+> wording is retained below as the historical record, not as current guidance.
+> The original "Forbidden: using `batch()` for rollback" line is likewise
+> superseded: `batch()` is the atomic primitive used by `commitWithAudit`; what is
+> forbidden is relying on a zero-row update or a post-batch JavaScript check.
 
 ## Context
 

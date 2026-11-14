@@ -1,8 +1,12 @@
 # Domain model
 
-Status: design only. No persistence schema exists. Names here are the intended
-ubiquitous language; when implementation begins, code and database names follow
-this document.
+Status: Milestone 1 design sketch, retained for history. **Milestone 2 canonical
+documents are authoritative where they differ:**
+[CANONICAL_DOMAIN_MODEL.md](CANONICAL_DOMAIN_MODEL.md),
+[FINANCIAL_DOMAIN_MODEL.md](FINANCIAL_DOMAIN_MODEL.md),
+[ACCOUNTING_INVARIANTS.md](ACCOUNTING_INVARIANTS.md),
+[D1_FINANCIAL_SCHEMA_DESIGN.md](D1_FINANCIAL_SCHEMA_DESIGN.md). No persistence
+schema for these records exists.
 
 ---
 
@@ -103,7 +107,8 @@ same event yields the existing result, never a second posting.
 
 `JournalEntry { entryId, tenantId, periodId, postedAt, description,
 sourceEventId?, reversalOfEntryId?, status }` with `status` ∈ {`draft`,
-`posted`, `reversed`}.
+`posted`}. `reversed` is derived from a posted reversal entry; posted rows are
+never edited (Milestone 2).
 
 Lines: `{ accountId, direction: debit|credit, amount: Money }` plus optional
 dimensions (project, campaign, counterparty) that never affect balance.
@@ -129,17 +134,20 @@ Status: `draft` → `issued` → (`partially_paid` →) `paid`, with `void` reac
 from `draft`/`issued` when nothing is allocated, and `overdue` as a derived flag,
 not a stored terminal state.
 
-Invariants: numbering is gapless per tenant and sequence; issued invoices are
-immutable except through credit notes; `amountPaid` never exceeds `total` without
-an explicit overpayment record.
+Invariants: numbering is unique per tenant; any gap policy is explicit and
+audited (not silently "gapless" under concurrency). Issued invoices are immutable
+except through credit notes; `amountPaid` never exceeds `total` without an
+explicit overpayment record.
 
 ### Payment, allocation and settlement
 
 `Payment { paymentId, tenantId, direction: inbound|outbound, amount, currency,
 receivedAt, method, providerRef?, status }`.
 
-Status: `initiated` → `settled` | `failed` | `returned`; later `refunded`,
-`charged_back`.
+Status (Milestone 1 sketch; superseded by the Milestone 2 lifecycle):
+`initiated → authorized → captured → settled`, with `failed`, `returned`,
+`refunded` and `charged_back` as related outcomes. Capture, payment, settlement
+and fee are distinct facts.
 
 `Allocation { allocationId, tenantId, paymentId, invoiceId, amount }` links a
 payment to an invoice (or to a bill for outbound direction). A payment may be
@@ -212,9 +220,9 @@ operations is a request that `financial-core` validates and may reject.
 
 | Aggregate | States |
 | --- | --- |
-| Journal entry | `draft` → `posted` → `reversed` |
+| Journal entry | `draft` → `posted`; `reversed` derived from a linked reversal |
 | Invoice | `draft` → `issued` → `partially_paid` → `paid`; `void`; `overdue` (derived) |
-| Payment | `initiated` → `settled` / `failed` / `returned`; `refunded`, `charged_back` |
+| Payment | `initiated` → `authorized` → `captured` → `settled`; `failed`, `returned`; refunds/chargebacks are linked records |
 | Period | `open` → `locked` → `closed` |
 | Reconciliation item | `unmatched` → `candidate` → `matched` / `unresolved` → `reopened` |
 | Approval | `pending` → `approved` / `rejected` / `expired` |

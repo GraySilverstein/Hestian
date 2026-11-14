@@ -1,8 +1,9 @@
 # Financial integrity
 
 Status: architectural invariants documented; **none of the accounting engine is
-implemented**. Each invariant states how it will be enforced and whether that
-enforcement exists.
+implemented**. Milestone 2's [ACCOUNTING_INVARIANTS.md](ACCOUNTING_INVARIANTS.md)
+is authoritative for definitions, enforcement locations and FI-23…FI-34; this file
+retains the original FI-01…FI-22 narrative and status.
 
 Read this before writing any code that touches money, invoices, payments,
 periods or reconciliation.
